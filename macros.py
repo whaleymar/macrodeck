@@ -9,14 +9,18 @@ import os
 ##############################
 # Hot Key Functions: #########
 ##############################
-def playsong():
+def playsong(path):
+	player(path)
+
+def playrsong():
 	player(lib.rsong())
 
 def shuffle():
 	q_clear()
-	for song in lib.shuffle('PUMP UP'):
+	for song in lib.shuffle('ACTION'):
 		plq.put(song)
 		print(os.path.basename(song)) # for debug
+	print('\n')
 	player.playlist_mode = True
 
 def skipsong():
@@ -33,7 +37,7 @@ def pause():
 def terminate():
 	# clear queue and shut down
 	q_clear()
-	macros.stop()
+	hotkeys.stop()
 
 def printstatus():
 	print("Playing: ", player.playing())
@@ -45,16 +49,27 @@ def printstatus():
 # Threading Stuff: ###########
 ##############################
 
-def init_macros():
-	return GlobalHotKeys({
-		f'<ctrl>+<shift>+<{keycode("F1")}>': terminate,
-		f'<{keycode("PAUSE")}>': pause,
-		f'<ctrl>+<{keycode("F3")}>': skipsong,
-		f'<ctrl>+<{keycode("F1")}>': stopsongs,
-		f'<ctrl>+<{keycode("F2")}>': playsong,
-		f'<ctrl>+<shift>+<{keycode("F3")}>': shuffle,
-		f'<ctrl>+<{keycode("F12")}>': printstatus
-		})
+def init_hotkeys(buttons):
+	hkmap = hotkeymap(buttons)
+	# for key in hkmap:
+	# 	print(key)
+	return GlobalHotKeys(hkmap)
+
+def reset_hotkeys(buttons, cur_thread=None):
+	if cur_thread is not None:
+		cur_thread.stop()
+
+	new_thread = init_hotkeys(buttons)
+	new_thread.start()
+	return new_thread
+
+def hotkeymap(buttons):
+	hotkeys = [(button.modifier, button.key, button.run_action) for button in buttons]
+	return {
+		f'{hotkey[0]}<{keycode(hotkey[1][1:-1])}>' if hotkey[1][0]=='<' and hotkey[1][-1]=='>' else\
+		   f'{hotkey[0]}{hotkey[1]}': hotkey[2]
+		for hotkey in hotkeys
+		}
 
 def playlist_worker():
 	while True:
@@ -67,7 +82,7 @@ def playlist_worker():
 			continue
 
 #######################################################
-# Helper Functions (for threads and macros): ##########
+# Helper Functions (for threads and hotkeys): ##########
 #######################################################
 
 def q_clear():
@@ -91,8 +106,8 @@ if __name__=='__main__':
 	# create playlist queue and threads
 	plq = Queue() # FIFO
 
-	macros = init_macros() # threading.thread instance
-	macros.start()
+	hotkeys = init_hotkeys() # threading.thread instance
+	hotkeys.start()
 	pl_thread = threading.Thread(target=playlist_worker, daemon=True, name="playlist")
 	pl_thread.start()
-	macros.join()
+	hotkeys.join()
