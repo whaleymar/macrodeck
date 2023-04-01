@@ -4,18 +4,25 @@ from PIL import Image, ImageTk
 import sys
 import os
 import math
+from functools import partial
 
 if sys.platform.startswith("win"):
     import ctypes
     ctypes.windll.shcore.SetProcessDpiAwareness(0)
     
 HEIGHT = 450
-WIDTH = 300
+WIDTH = 500
 PATH = os.path.dirname(os.path.realpath(__file__))
+
+def hovercolor(hexstring):
+    return '#%02x%02x%02x' % tuple(max(col-30,0) for col in to_rgb(hexstring))
+
+def to_rgb(hexstring):
+    return tuple(int(hexstring[i:i+2],16) for i in range(1,6,2))
 
 class AskColor(customtkinter.CTkToplevel):
     
-    def __init__(self, color=(255, 255, 255)):
+    def __init__(self, used_colors, color=(255, 255, 255)):
         
         super().__init__()
         
@@ -34,7 +41,13 @@ class AskColor(customtkinter.CTkToplevel):
         default_color_hex = '#%02x%02x%02x' % color
         
         self.frame = customtkinter.CTkFrame(master=self)
-        self.frame.grid(padx=20, pady=20, sticky="nswe")
+        self.frame.grid(row=0, column=0, padx=20, pady=20, sticky="")
+
+        # self.used_colors = list({"#1e1e1e", '#0494D9', '#595f5d'}) # temp, will be arg
+        self.used_colors = list(used_colors) # temp, will be arg
+        self.sframe = customtkinter.CTkScrollableFrame(master=self, width=150)
+        self.sframe.grid(row=0, column=1, padx=20, pady=20, sticky='nse')
+        self.used_buttons()
           
         self.canvas = tkinter.Canvas(self.frame, height=200, width=200, highlightthickness=0,
                                 bg=self.frame._apply_appearance_mode(self.frame._fg_color))
@@ -88,7 +101,24 @@ class AskColor(customtkinter.CTkToplevel):
         self._color = None
         self.grab_release()
         self.destroy()
-        
+
+    def used_buttons(self):
+        for i,color in enumerate(self.used_colors):
+            newbutton = customtkinter.CTkButton(master=self.sframe,
+                                                text=color,
+                                                fg_color=color,
+                                                hover_color=hovercolor(color),
+                                                border_width=0,
+                                                corner_radius=0,
+                                                command=partial(self.set_color,i)
+                                                )
+            newbutton.grid(row=i, column=0, sticky='ew')
+            
+    def set_color(self, i):
+        self.label.configure(fg_color=self.used_colors[i])
+        self.label.configure(text=self.used_colors[i])
+        self.slider.configure(progress_color=self.used_colors[i])
+
     def on_mouse_drag(self, event):
         x = event.x
         y = event.y

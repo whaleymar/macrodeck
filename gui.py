@@ -1,7 +1,7 @@
 import tkinter as tk
 import customtkinter as ctk
 from collections import OrderedDict
-from colorpicker import AskColor # from https://github.com/Akascape/CTkColorPicker
+from colorpicker import AskColor, hovercolor, to_rgb # from https://github.com/Akascape/CTkColorPicker
 import os
 import util
 import macros
@@ -23,13 +23,6 @@ ctk.set_default_color_theme("blue")  # Themes: blue (default), dark-blue, green
 
 def do_nothing():
     pass
-
-def hovercolor(hexstring):
-    return '#%02x%02x%02x' % tuple(max(col-30,0) for col in to_rgb(hexstring))
-
-def to_rgb(hexstring):
-    return tuple(int(hexstring[i:i+2],16) for i in range(1,6,2))
-
 
 ####################################
 # CONSTANTS
@@ -173,6 +166,7 @@ class App(ctk.CTk):
 
         self.geometry(f"{XDIM}x{YDIM}")
         self.STANDARDFONT = ctk.CTkFont(family='Arial', weight='bold', size=14) # default size is 13
+        self.SMALLFONT = ctk.CTkFont(family='Arial', size=14) # default size is 13
 
         # init VLC player
         self.player = util.VLCPlayer()
@@ -180,6 +174,9 @@ class App(ctk.CTk):
         # make all widgets focus-able so I can click out of entry box:
         # also make buttons un-focusable by clicking outside of a widget
         self.bind_all("<1>", lambda event: self.entryconfig(event))
+
+        # init right click menu for layouts:
+        self.rclickmenu = create_menu(self)
 
         # save layouts on closing:
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
@@ -204,13 +201,6 @@ class App(ctk.CTk):
                                                 font=self.STANDARDFONT,
                                                 anchor='w', command=self.new_layout)
         self.newlayoutbutton.grid(row=0, column=0, sticky='ew')
-        self.rmlayoutbutton = ctk.CTkButton(self.lframe, corner_radius=0, height=40, border_spacing=10,
-                                                text="Delete Layout", 
-                                                font=self.STANDARDFONT,
-                                                fg_color='#da0704',
-                                                hover_color=hovercolor('#ff4542'),
-                                                anchor='w', command=self.delete_layout)
-        self.rmlayoutbutton.grid(row=1, column=0, sticky='ew')
 
         # TOP (button grid)
         self.topframe = ctk.CTkFrame(self, width = (XDIM/2 - XPAD*2), height = (YDIM - YPAD*2))
@@ -222,7 +212,7 @@ class App(ctk.CTk):
         ####################################
 
         self.text_shared = tk.StringVar(self.bottomframe, value='')
-        self.text_shared.trace('w',self.renamebutton)
+        self.text_shared.trace('w',self.renamebutton) # callback when text is edited
 
         self.current_button = None
 
@@ -240,6 +230,7 @@ class App(ctk.CTk):
         self.empty_profile = Layout('Layout 1', self.buttons)
 
         # load layouts
+        self.used_colors = {FC_DEFAULT, FC_EMPTY}
         try:
             self.load_layouts()
         except FileNotFoundError:
@@ -416,15 +407,48 @@ class App(ctk.CTk):
         self.layouts.append(Layout(f'Layout {len(self.layouts)+1}', self.empty_profile.configs, False))
         self.refresh_sidebar()
 
+    # delete layout that was right clicked
     def delete_layout(self):
-        if self.layouts[self.current_layout].ismain():
+        to_delete = self.layout_edit_ix
+        if self.layouts[to_delete].ismain():
             self.helper.configure(text='CANNOT DELETE MAIN PROFILE')
         else:
-            to_delete = self.current_layout
             self.switch_layout(to_delete-1)
             self.layouts.pop(to_delete)
-            # self.layoutbuttons[to_delete].destroy()
             self.refresh_sidebar()
+
+    # init rename process
+    def rename_layout1(self):
+        # get current name
+        curname = str(self.layouts[self.layout_edit_ix])
+
+        # create text variable
+        layout_name = tk.StringVar(self.bottomframe, value='')
+
+        # change right-clicked button to entry widget
+        self.layoutbuttons[self.layout_edit_ix].destroy()
+        rename_entry = ctk.CTkEntry(self.lframe, corner_radius=0, height=40, 
+                                      placeholder_text=curname, 
+                                      font=self.STANDARDFONT, 
+                                      textvariable=layout_name
+                                      )
+        rename_entry.grid(row=self.layout_edit_ix+1, column=0, sticky='ew') # +1 for new layout button
+        rename_entry.insert(0, curname)
+        rename_entry.icursor(len(curname))
+        rename_entry.focus()
+
+        # bind unfocus and Enter (key) to finish the rename process
+        rename_entry.bind('<FocusOut>', self.rename_layout2)
+        rename_entry.bind('<Return>', self.rename_layout2)
+
+        # add entry widget to layoutbuttons
+        self.layoutbuttons[self.layout_edit_ix] = rename_entry
+
+    # complete rename process
+    def rename_layout2(self, event): 
+        name = self.layoutbuttons[self.layout_edit_ix].get()
+        self.layouts[self.layout_edit_ix].rename(name)
+        self.refresh_sidebar() # changes name and reverts entry widget to buttons
 
     def open_layout(self, layout_name):
         layout_enum = -1
@@ -493,6 +517,10 @@ class App(ctk.CTk):
         
         self.layouts[0].to_buttons(self.buttons)
 
+        # load colors
+        for layout in self.layouts:
+            self.used_colors |= layout.colors()
+
     def refresh_sidebar(self, init=False):
         if not init:
             for button in self.layoutbuttons:
@@ -500,13 +528,18 @@ class App(ctk.CTk):
         self.layoutbuttons = []
         for i,layout in enumerate(self.layouts):
             fg_color = ('gray70', 'gray30') if i==self.current_layout else 'transparent'
-            newbutton = ctk.CTkButton(self.lframe, corner_radius=0, height=40, border_spacing=10,
+            newbutton = LayoutButton(self.lframe, corner_radius=0, height=40, border_spacing=10,
                                       text=str(layout), fg_color=fg_color, 
                                       font=self.STANDARDFONT, hover_color=('gray70', 'gray30'),
                                       anchor='w', 
                                       command=partial(self.switch_layout,i)
                                       )
-            newbutton.grid(row=i+2, column=0, sticky='ew') # +2 for new layout and remove buttons
+            newbutton.grid(row=i+1, column=0, sticky='ew') # +1 for new layout button
+
+            # add right click callback and bind right click to it
+            newbutton.set_callback(self, i)
+            newbutton.bind("<Button-3>", newbutton.rclick)
+
             self.layoutbuttons.append(newbutton)
 
     # sets arg and defaulttext of current button (currently used for layout action)
@@ -520,7 +553,7 @@ class App(ctk.CTk):
             current_color = self.current_button.cget('fg_color')
             if len(current_color)==2: current_color=current_color[1] # dark theme color is second
             current_color = to_rgb(current_color)
-            pick_color = AskColor(color = current_color)
+            pick_color = AskColor(self.used_colors, color = current_color)
             color = pick_color.get()
             if color is None:
                 # exited without choosing a color
@@ -587,6 +620,13 @@ class App(ctk.CTk):
         except AttributeError: # from color picker
             pass
 
+    def rclick_popup(self, event, layout_ix):
+        self.layout_edit_ix = layout_ix
+        try:
+            self.rclickmenu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.rclickmenu.grab_release()
+
     def helpertxt_clear(self):
         self.helper.configure(text='')
 
@@ -610,6 +650,7 @@ class App(ctk.CTk):
 # OOP (sksksk)
 ####################################
 
+# ctk button wrapper that stores callback/args, hotkeys, and some convenience methods for main keys
 class BUTTON(ctk.CTkButton):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -701,6 +742,7 @@ class BUTTON(ctk.CTkButton):
             except TypeError:
                 self.master.master.helper.configure(text='NO FILE SELECTED')
 
+# popup window for configuring hotkeys
 class HKWindow(ctk.CTkToplevel):
     def __init__(self, key, modifier, STANDARDFONT):
         super().__init__()
@@ -788,9 +830,17 @@ class Layout():
             button.set_arg(config[1])
             button.set_colors(config[4][0], config[4][1], config[4][2])
             # button.set_keys(config[2][0], config[2][1]) # doing this seems confusing
+
+    def colors(self):
+        # returns set of colors used in self.configs
+        # only returns fg_color (ix 1)
+        return set([self.configs[i][-1][0] for i in range(len(self.configs))])
     
     def ismain(self):
         return self._main
+    
+    def rename(self, name):
+        self.name = name
     
     def __str__(self):
         return self.__repr__()
@@ -798,6 +848,18 @@ class Layout():
     def __repr__(self):
         return self.name
 
+# ctk button wrapper that stores right-click menu callback for layout buttons
+class LayoutButton(ctk.CTkButton):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def set_callback(self, app, i):
+        self.index = i
+        self.callback = app.rclick_popup
+    
+    def rclick(self, event):
+        self.callback(event, self.index)
+    
 ####################################
 # LAYOUT SETUP
 ####################################
@@ -821,11 +883,11 @@ def numpad_buttongrid(app):
                                fg_color=FC_EMPTY,
                                hover_color=HC_EMPTY,
                                border_color=BC_DEFAULT,
-                               font=app.STANDARDFONT,
+                               font=app.STANDARDFONT
                                )
         button.set_keys(DEFAULT_MODIFIER if BUTTON_MAPPING[key]['modifier'] is None else BUTTON_MAPPING[key]['modifier'],
                         key)
-        button._text_label.configure(wraplength=WRAPLEN)
+        button._text_label.configure(wraplength=WRAPLEN*xadjustment)
         button.configure(text='')
         button.grid(row=BUTTON_MAPPING[key]['y'], column=BUTTON_MAPPING[key]['x'], 
                     padx=XPAD, pady=YPAD, 
@@ -845,37 +907,57 @@ def button_settings(app):
     txtbox = ctk.CTkEntry(frame, 
                           placeholder_text='Button Text',
                           width = XDIM/3,
-                          textvariable=app.text_shared
+                          textvariable=app.text_shared,
+                          font=app.STANDARDFONT
                           )
     txtbox.grid(row=1, column=0, padx=XPAD, pady=YPAD, sticky='w')
 
     # Button Action
     action = ctk.CTkOptionMenu(frame, 
                                values = ACTION_VALUES,
-                               command=app.set_action)
+                               command=app.set_action,
+                               font=app.STANDARDFONT)
     action.grid(row=2, column=0, padx=XPAD, pady=YPAD, sticky='w')
 
     # Config Button Appearance
     button_clr = ctk.CTkButton(frame, 
                                command=app.choosecolor, 
-                               text='Button Color')
+                               text='Button Color',
+                               font=app.STANDARDFONT)
     button_clr.grid(row=1, column=1, padx=XPAD, pady=YPAD, sticky='w')
 
     # configure hotkey:
     button_hkey = ctk.CTkButton(frame, 
                                   command=app.hkconfig, 
-                                  text='Configure Hotkey')
+                                  text='Configure Hotkey',
+                                  font=app.STANDARDFONT)
     button_hkey.grid(row=3, column=0, columnspan=2, padx=XPAD, pady=YPAD, sticky='new')
 
     # button to simulate key press (for debugging)
     if DEBUG:
         button_kpress = ctk.CTkButton(frame, 
                                command=app.pressbutton, 
-                               text='Simulate Key Press')
+                               text='Simulate Key Press',
+                               font=app.STANDARDFONT)
         button_kpress.grid(row=4, column=0, columnspan=2, padx=XPAD, pady=YPAD, sticky='new')
 
     return helper, txtbox, action, button_clr
 
+def create_menu(app):
+    m = tk.Menu(app, 
+                tearoff=0,
+                font=app.SMALLFONT,
+                fg='white',
+                background=FC_EMPTY,
+                activebackground='gray30',
+                bd=1,
+                relief=None
+                )
+    m.add_command(label = 'Rename', command=app.rename_layout1)
+    m.add_separator()
+    m.add_command(label = 'Delete', command=app.delete_layout)
+
+    return m
 
 if __name__=='__main__':
     app = App()
