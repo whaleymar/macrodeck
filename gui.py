@@ -8,6 +8,7 @@ import macros
 from functools import partial
 import time
 import json
+from PIL import Image
 # from multiprocessing import Queue # communication btwn threads
 # import threading
 
@@ -148,7 +149,12 @@ BUTTON_MAPPING = OrderedDict({
     }
 })
 
+ICON_SIZE = (26,23)
 ACTION_VALUES = ['No Action', 'Play Media', 'Stop Media', 'Pause Media', 'Open Layout', 'Perform Macro']
+ACTION_ICONS = [None, ctk.CTkImage(Image.open('assets/action_audio.png'), size=ICON_SIZE), ctk.CTkImage(Image.open('assets/action_mute.png'), size=ICON_SIZE), 
+                ctk.CTkImage(Image.open('assets/action_pause.png'), size=ICON_SIZE), ctk.CTkImage(Image.open('assets/action_openprofile.png'), size=ICON_SIZE), 
+                ctk.CTkImage(Image.open('assets/action_macro.png'), size=ICON_SIZE)]
+# ACTION_ICONS = [None, None, None, None, None, None]
 
 BC_DEFAULT = '#565B5E' 
 BC_ACTIVE = '#FFFFFF'
@@ -356,6 +362,7 @@ class App(ctk.CTk):
                     raise ValueError(action_text)
 
             self.set_actionbutton(action_text)
+            self.current_button.show_image()
         else:
             self.action.set(ACTION_VALUES[0])
             self.helpertxt_nobtn()
@@ -558,6 +565,7 @@ class App(ctk.CTk):
             if color is None:
                 # exited without choosing a color
                 return
+            self.used_colors.add(color)
             self.current_button.configure(fg_color=color)
             self.current_button.configure(hover_color=hovercolor(color))
         else:
@@ -731,6 +739,10 @@ class BUTTON(ctk.CTkButton):
     
     def get_colors(self):
         return self.cget('fg_color'), self.cget('border_color'), self.cget('hover_color')
+    
+    def show_image(self):
+        self.configure(image=ACTION_ICONS[self.action_enum])
+        self._draw()
 
     def run_action(self):
         if self.action_enum is None: return
@@ -741,6 +753,35 @@ class BUTTON(ctk.CTkButton):
                 ACTION_CALLS[self.action_enum]()
             except TypeError:
                 self.master.master.helper.configure(text='NO FILE SELECTED')
+    
+    # overwriting this to stop buttons from resizing
+    def _create_grid(self):
+        # messing with weighting so action icon doesn't move with text
+        if self._text_label is not None:
+            self._text_label.grid_propagate(0)
+        if self._image_label is not None:
+            self.grid_rowconfigure(3, weight=1)
+
+        if self._compound == "right":
+            if self._image_label is not None:
+                self._image_label.grid(row=2, column=3, sticky="w")
+            if self._text_label is not None:
+                self._text_label.grid(row=2, column=1, sticky="e")
+        elif self._compound == "left":
+            if self._image_label is not None:
+                self._image_label.grid(row=2, column=1, sticky="e")
+            if self._text_label is not None:
+                self._text_label.grid(row=2, column=3, sticky="w")
+        elif self._compound == "top":
+            if self._image_label is not None:
+                self._image_label.grid(row=1, column=2, sticky="s")
+            if self._text_label is not None:
+                self._text_label.grid(row=3, column=2, sticky="n")
+        elif self._compound == "bottom":
+            if self._image_label is not None:
+                self._image_label.grid(row=3, column=2, pady=3, sticky="s")
+            if self._text_label is not None:
+                self._text_label.grid(row=0, column=2, pady=2, sticky="n")
 
 # popup window for configuring hotkeys
 class HKWindow(ctk.CTkToplevel):
@@ -829,6 +870,7 @@ class Layout():
             button.set_action(config[0])
             button.set_arg(config[1])
             button.set_colors(config[4][0], config[4][1], config[4][2])
+            button.show_image()
             # button.set_keys(config[2][0], config[2][1]) # doing this seems confusing
 
     def colors(self):
@@ -876,22 +918,28 @@ def numpad_buttongrid(app):
         button = BUTTON(frame, 
                             #    command=mapping[key]['callback'],
                                command=partial(app.button_callback, i), 
-                               text='asdf',
+                               text='asdf', # dummy text due to bug
                                width=85*xadjustment + 2*XPAD*(xadjustment-1),
                                height=85*yadjustment + 2*YPAD*(yadjustment-1),
                                border_width=2,
                                fg_color=FC_EMPTY,
                                hover_color=HC_EMPTY,
                                border_color=BC_DEFAULT,
-                               font=app.STANDARDFONT
+                               font=app.STANDARDFONT,
+                               anchor='n',
+                               compound='bottom'
                                )
         button.set_keys(DEFAULT_MODIFIER if BUTTON_MAPPING[key]['modifier'] is None else BUTTON_MAPPING[key]['modifier'],
                         key)
         button._text_label.configure(wraplength=WRAPLEN*xadjustment)
+
+        # undo dummy values
         button.configure(text='')
+
         button.grid(row=BUTTON_MAPPING[key]['y'], column=BUTTON_MAPPING[key]['x'], 
                     padx=XPAD, pady=YPAD, 
                     rowspan=yadjustment, columnspan=xadjustment)
+        button.grid_propagate(0) # prevents vertical stretching with text
         buttons.append(button)
     return buttons
 
