@@ -8,8 +8,6 @@ from functools import partial
 import time
 import json
 from PIL import Image
-# from multiprocessing import Queue # communication btwn threads
-# import threading
 
 ####################################
 # WINDOW APPEARANCE
@@ -151,19 +149,9 @@ class App(ctk.CTk):
         self.layouts[0]._main = True
         self.current_layout = 0
         self.refresh_sidebar(True)
-
-        ####################################
-        # THREADS
-        ####################################
-        # create worker + queue to handle layout switching
-        # this is necessary since the hotkey thread is reset during a layout switch
-        # self.q_layout = Queue() # FIFO
-        # self.layout_thread = threading.Thread(target=self.layout_worker, daemon=True, name="layout")
-        # self.layout_thread.start()
-
     
-    # return VLC player callbacks to be used as globals
-    def media_callbacks(self):
+    # return callbacks to be used as globals
+    def _callbacks(self):
         return [do_nothing, self.player.__call__, self.player.reset, self.player.toggle_pause, self.open_layout, None]
     
     def init_hotkeys(self):
@@ -373,19 +361,18 @@ class App(ctk.CTk):
 
         if layout_enum == -1:
             raise ValueError(layout_name)
+
+        self.layout_enum = layout_enum
+        self.after(0, self.switch_layout)
+
+    def switch_layout(self, layout_enum=None):
+
+        if layout_enum is None:
+            if self.layout_enum is not None:
+                layout_enum = self.layout_enum
+            else:
+                raise TypeError
         
-        # self.q_layout.put(layout_enum) # tell worker to switch layouts
-
-        # kill hotkey thread before we mutate the buttons
-        self.kill_hotkeys()
-
-        self.switch_layout(layout_enum)
-
-        # re-init hotkeys
-        self.init_hotkeys()
-
-    def switch_layout(self, layout_enum):
-
         # reset active buttons
         if self.current_button is not None:
                 self.current_button.configure(border_color=BC_DEFAULT)
@@ -556,15 +543,6 @@ class App(ctk.CTk):
 
     def helpertxt_nobtn(self):
         self.helper.configure(text='NO BUTTON SELECTED')
-
-    # def layout_worker(self):
-    #     while True:
-    #         if self.q_layout.empty():
-    #             # time.sleep(0.5)
-    #             continue
-    #         layout_enum = self.q_layout.get()
-    #         self.switch_layout(layout_enum)
-    #         time.sleep(0.1)
 
     def _on_closing(self):
         self.save_layouts()
@@ -834,14 +812,14 @@ class LayoutButton(ctk.CTkButton):
 def numpad_buttongrid(app, key_layout):
     
     with open(key_layout, 'r') as f:
-        BUTTON_MAPPING = json.load(f)
+        button_mapping = json.load(f)
 
     buttons = []
     frame = app.topframe
 
-    for i,key in enumerate(BUTTON_MAPPING.keys()):
-        xadjustment = BUTTON_SIZES[BUTTON_MAPPING[key]['attr']][1]
-        yadjustment = BUTTON_SIZES[BUTTON_MAPPING[key]['attr']][0]
+    for i,key in enumerate(button_mapping.keys()):
+        xadjustment = BUTTON_SIZES[button_mapping[key]['attr']][1]
+        yadjustment = BUTTON_SIZES[button_mapping[key]['attr']][0]
         button = BUTTON(frame, 
                             #    command=mapping[key]['callback'],
                                command=partial(app.button_callback, i), 
@@ -856,14 +834,14 @@ def numpad_buttongrid(app, key_layout):
                                anchor='n',
                                compound='bottom'
                                )
-        button.set_keys('' if BUTTON_MAPPING[key]['modifier'] is None else BUTTON_MAPPING[key]['modifier'],
+        button.set_keys('' if button_mapping[key]['modifier'] is None else button_mapping[key]['modifier'],
                         key)
         button._text_label.configure(wraplength=WRAPLEN*xadjustment)
 
         # undo dummy values
         button.configure(text='')
 
-        button.grid(row=BUTTON_MAPPING[key]['y'], column=BUTTON_MAPPING[key]['x'], 
+        button.grid(row=button_mapping[key]['y'], column=button_mapping[key]['x'], 
                     padx=XPAD, pady=YPAD, 
                     rowspan=yadjustment, columnspan=xadjustment)
         button.grid_propagate(0) # prevents vertical stretching with text
@@ -937,7 +915,7 @@ def create_menu(app):
 if __name__=='__main__':
     arg1 = 'layouts/numpad_tall.json'
     app = App(arg1)
-    ACTION_CALLS = app.media_callbacks()
+    ACTION_CALLS = app._callbacks()
 
     # initialize macros
     app.init_hotkeys()
