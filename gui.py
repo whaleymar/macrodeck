@@ -1,6 +1,5 @@
 import tkinter as tk
 import customtkinter as ctk
-from collections import OrderedDict
 from colorpicker import AskColor, hovercolor, to_rgb # from https://github.com/Akascape/CTkColorPicker
 import os
 import util
@@ -31,7 +30,7 @@ def do_nothing():
 
 # geo
 XDIM = 800
-YDIM = 700
+YDIM = 800 # 700 good for normal numpad
 XPAD = 5
 YPAD = 5
 
@@ -47,107 +46,14 @@ BUTTON_SIZES = {
 MODIFIERS = ['none','<ctrl>','<shift>','<alt>',
              '<ctrl>+<shift>', '<ctrl>+<alt>', 
              '<shift>+<alt>', '<ctrl>+<shift>+<alt>']
+KEYS = ['<NUMPAD0>','<NUMPAD1>','<NUMPAD2>','<NUMPAD3>','<NUMPAD4>',
+        '<NUMPAD5>','<NUMPAD6>','<NUMPAD7>','<NUMPAD8>','<NUMPAD9>',
+        '+','-','*','/','<DECIMAL>','<RETURN>',
+        '<F1>','<F2>','<F3>','<F4>','<F5>','<F6>',
+        '<F7>','<F8>','<F9>','<F10>','<F11>','<F12>',
+        '<F13>','<F14>','<F15>','<F16>','<F17>','<F18>',
+        '<F19>','<F20>','<F21>','<F22>','<F23>','<F24>']
 DEFAULT_MODIFIER = MODIFIERS[3]
-
-# note: y=0 is top of grid
-BUTTON_MAPPING = OrderedDict({
-    '<NUMPAD0>': {
-        'x':0,
-        'y':4,
-        'attr':'wide',
-        'modifier':None
-    },
-    '<NUMPAD1>':{
-        'x':0,
-        'y':3,
-        'attr':'regular',
-        'modifier':None
-    },
-    '<NUMPAD2>':{
-        'x':1,
-        'y':3,
-        'attr':'regular',
-        'modifier':None
-    },
-    '<NUMPAD3>':{
-        'x':2,
-        'y':3,
-        'attr':'regular',
-        'modifier':None
-    },
-    '<NUMPAD4>':{
-        'x':0,
-        'y':2,
-        'attr':'regular',
-        'modifier':None
-    },
-    '<NUMPAD5>':{
-        'x':1,
-        'y':2,
-        'attr':'regular',
-        'modifier':None
-    },
-    '<NUMPAD6>':{
-        'x':2,
-        'y':2,
-        'attr':'regular',
-        'modifier':None
-    },
-    '<NUMPAD7>':{
-        'x':0,
-        'y':1,
-        'attr':'regular',
-        'modifier':None
-    },
-    '<NUMPAD8>':{
-        'x':1,
-        'y':1,
-        'attr':'regular',
-        'modifier':None
-    },
-    '<NUMPAD9>':{
-        'x':2,
-        'y':1,
-        'attr':'regular',
-        'modifier':None
-    },
-    '<DECIMAL>':{
-        'x':2,
-        'y':4,
-        'attr':'regular',
-        'modifier':None
-    },
-    '<RETURN>':{
-        'x':3,
-        'y':3,
-        'attr':'tall',
-        'modifier':None
-    },
-    '+':{
-        'x':3,
-        'y':1,
-        'attr':'tall',
-        'modifier':None
-    },
-    '-':{
-        'x':3,
-        'y':0,
-        'attr':'regular',
-        'modifier':None
-    },
-    '*':{
-        'x':2,
-        'y':0,
-        'attr':'regular',
-        'modifier':None
-    },
-    '/':{
-        'x':1,
-        'y':0,
-        'attr':'regular',
-        'modifier':None
-    }
-})
 
 ICON_SIZE = (26,23)
 ACTION_VALUES = ['No Action', 'Play Media', 'Stop Media', 'Pause Media', 'Open Layout', 'Perform Macro']
@@ -167,7 +73,7 @@ HC_DEFAULT = hovercolor(FC_DEFAULT)
 WRAPLEN = 65
 
 class App(ctk.CTk):
-    def __init__(self):
+    def __init__(self, key_layout):
         super().__init__()
 
         self.geometry(f"{XDIM}x{YDIM}")
@@ -225,7 +131,8 @@ class App(ctk.CTk):
         self.initialdir = '/' # where we start when opening a file
         self.flex_button=None
 
-        self.buttons = numpad_buttongrid(self)
+        self.key_layout = os.path.basename(key_layout)[:-5] # name of layout file without extension
+        self.buttons = numpad_buttongrid(self, key_layout)
         self.helper, self.txtbox, self.action, self.button_clr = button_settings(self)
 
         ####################################
@@ -239,7 +146,7 @@ class App(ctk.CTk):
         self.used_colors = {FC_DEFAULT, FC_EMPTY}
         try:
             self.load_layouts()
-        except FileNotFoundError:
+        except (FileNotFoundError, KeyError):
             self.layouts = [self.empty_profile]
         self.layouts[0]._main = True
         self.current_layout = 0
@@ -263,9 +170,9 @@ class App(ctk.CTk):
         self.hotkeys = macros.init_hotkeys(self.buttons) # inherits from threading.thread
         self.hotkeys.start()
 
-    # def kill_hotkeys(self):
-    #     self.hotkeys.stop()
-    #     self.hotkeys = None
+    def kill_hotkeys(self):
+        self.hotkeys.stop()
+        self.hotkeys = None
     
     def button_callback(self, button_ix):
         self.reset_bordercols()
@@ -467,13 +374,15 @@ class App(ctk.CTk):
         if layout_enum == -1:
             raise ValueError(layout_name)
         
-        # self.switch_layout(layout_enum)
         # self.q_layout.put(layout_enum) # tell worker to switch layouts
 
         # kill hotkey thread before we mutate the buttons
-        # self.kill_hotkeys()
+        self.kill_hotkeys()
 
         self.switch_layout(layout_enum)
+
+        # re-init hotkeys
+        self.init_hotkeys()
 
     def switch_layout(self, layout_enum):
 
@@ -497,9 +406,6 @@ class App(ctk.CTk):
         self.layouts[self.current_layout].to_buttons(self.buttons)
         # print(f'switched to layout {layout_enum+1}')
 
-        # re-init hotkeys
-        # self.init_hotkeys()
-
     # write all layout info to disk
     def save_layouts(self):#, layout_enum):
         # save current layout:
@@ -509,20 +415,30 @@ class App(ctk.CTk):
         data = {}
         for layout in self.layouts:
             data[str(layout)] = layout.configs
+
+        # load save file:
+        with open('savedata.json', 'r') as f:
+            savedata = json.load(f)
+
+        # overwrite relevant part:
+        savedata[self.key_layout] = data
+
         with open('savedata.json', 'w') as f:
-            json.dump(data, f)
+            json.dump(savedata, f)
         
-        print("saved layouts to savedata.json")
+        print("saved data to savedata.json")
 
     def load_layouts(self):
         with open('savedata.json', 'r') as f:
             data = json.load(f)
+
+        data = data[self.key_layout]
         
         self.layouts = []
         for k,v in data.items():
             self.layouts.append(Layout(k, v, False))
         
-        self.layouts[0].to_buttons(self.buttons)
+        self.layouts[0].to_buttons(self.buttons, set_keys=True)
 
         # load colors
         for layout in self.layouts:
@@ -641,14 +557,14 @@ class App(ctk.CTk):
     def helpertxt_nobtn(self):
         self.helper.configure(text='NO BUTTON SELECTED')
 
-    def layout_worker(self):
-        while True:
-            if self.q_layout.empty():
-                # time.sleep(0.5)
-                continue
-            layout_enum = self.q_layout.get()
-            self.switch_layout(layout_enum)
-            time.sleep(0.1)
+    # def layout_worker(self):
+    #     while True:
+    #         if self.q_layout.empty():
+    #             # time.sleep(0.5)
+    #             continue
+    #         layout_enum = self.q_layout.get()
+    #         self.switch_layout(layout_enum)
+    #         time.sleep(0.1)
 
     def _on_closing(self):
         self.save_layouts()
@@ -694,7 +610,7 @@ class BUTTON(ctk.CTkButton):
         return self.arg
 
     def set_keys(self, modifier, key):
-        if modifier=='none':
+        if modifier=='none' or modifier=='':
             self.modifier = ''
         else:
             self.modifier = modifier+'+' # add '+' for modifier for convenience
@@ -709,9 +625,9 @@ class BUTTON(ctk.CTkButton):
 
         # sometimes this setting gets overwritten by other ops, so resetting it here for max coverage
         if self._text_label is None:
-                self.configure(text=' ')
-                self.configure(text='')
-                self._text_label.configure(wraplength=WRAPLEN)
+            self.configure(text=' ')
+            self.configure(text='')
+            self._text_label.configure(wraplength=WRAPLEN)
 
 
         if default and self.default_text == self.cget('text'):
@@ -754,7 +670,7 @@ class BUTTON(ctk.CTkButton):
             except TypeError:
                 self.master.master.helper.configure(text='NO FILE SELECTED')
     
-    # overwriting this to stop buttons from resizing
+    # override this to stop buttons from resizing
     def _create_grid(self):
         # messing with weighting so action icon doesn't move with text
         if self._text_label is not None:
@@ -808,11 +724,11 @@ class HKWindow(ctk.CTkToplevel):
         self.modifier = ctk.CTkOptionMenu(master=self.frame,
                                           values=MODIFIERS,
                                           font=STANDARDFONT)
-        self.modifier.set(modifier[:-1])
+        self.modifier.set(modifier[:-1] if modifier !="" else MODIFIERS[0]) # we store "" instead of "none"
+        
         # key: 
-        # I know it's a forward slash but pynput makes the rules
         self.key = ctk.CTkOptionMenu(master=self.frame,
-                                     values=list(BUTTON_MAPPING.keys()),
+                                     values=KEYS,
                                      font=STANDARDFONT)
         self.key.set(key)
 
@@ -863,15 +779,24 @@ class Layout():
         self._main = ismain
     
     # mutates buttons
-    def to_buttons(self, buttons):
+    def to_buttons(self, buttons, set_keys=False):
         for config, button in zip(self.configs, buttons):
             button.default_text = config[3][1] # have to do this before set_text
-            button.set_text(config[3][0])
+            # button.set_text(config[3][0])
             button.set_action(config[0])
             button.set_arg(config[1])
-            button.set_colors(config[4][0], config[4][1], config[4][2])
-            button.show_image()
-            # button.set_keys(config[2][0], config[2][1]) # doing this seems confusing
+            # button.set_colors(config[4][0], config[4][1], config[4][2])
+            # button.show_image()
+            button.configure(text=config[3][0][:35], fg_color=config[4][0], border_color=config[4][1], hover_color=config[4][2],
+                             image=ACTION_ICONS[button.action_enum])
+            
+            if button._text_label is None:
+                button.configure(text=' ')
+                button.configure(text='')
+            button._text_label.configure(wraplength=WRAPLEN)
+
+            if set_keys:
+                button.set_keys(config[2][0], config[2][1]) # only do this when loading from save
 
     def colors(self):
         # returns set of colors used in self.configs
@@ -906,8 +831,10 @@ class LayoutButton(ctk.CTkButton):
 # LAYOUT SETUP
 ####################################
 
-def numpad_buttongrid(app):
-    # 
+def numpad_buttongrid(app, key_layout):
+    
+    with open(key_layout, 'r') as f:
+        BUTTON_MAPPING = json.load(f)
 
     buttons = []
     frame = app.topframe
@@ -929,7 +856,7 @@ def numpad_buttongrid(app):
                                anchor='n',
                                compound='bottom'
                                )
-        button.set_keys(DEFAULT_MODIFIER if BUTTON_MAPPING[key]['modifier'] is None else BUTTON_MAPPING[key]['modifier'],
+        button.set_keys('' if BUTTON_MAPPING[key]['modifier'] is None else BUTTON_MAPPING[key]['modifier'],
                         key)
         button._text_label.configure(wraplength=WRAPLEN*xadjustment)
 
@@ -1008,7 +935,8 @@ def create_menu(app):
     return m
 
 if __name__=='__main__':
-    app = App()
+    arg1 = 'layouts/numpad_tall.json'
+    app = App(arg1)
     ACTION_CALLS = app.media_callbacks()
 
     # initialize macros
