@@ -54,9 +54,9 @@ KEYS = ['<NUMPAD0>','<NUMPAD1>','<NUMPAD2>','<NUMPAD3>','<NUMPAD4>',
 DEFAULT_MODIFIER = MODIFIERS[3]
 
 ICON_SIZE = (26,23)
-ACTION_VALUES = ['No Action', 'Play Media', 'Stop Media', 'Pause Media', 'Open Layout', 'Perform Macro']
+ACTION_VALUES = ['No Action', 'Play Media', 'Stop Media', 'Pause Media', 'Open View', 'Perform Macro']
 ACTION_ICONS = [None, ctk.CTkImage(Image.open('assets/action_audio.png'), size=ICON_SIZE), ctk.CTkImage(Image.open('assets/action_mute.png'), size=ICON_SIZE), 
-                ctk.CTkImage(Image.open('assets/action_pause.png'), size=ICON_SIZE), ctk.CTkImage(Image.open('assets/action_openprofile.png'), size=ICON_SIZE), 
+                ctk.CTkImage(Image.open('assets/action_pause.png'), size=ICON_SIZE), ctk.CTkImage(Image.open('assets/action_openview.png'), size=ICON_SIZE), 
                 ctk.CTkImage(Image.open('assets/action_macro.png'), size=ICON_SIZE)]
 # ACTION_ICONS = [None, None, None, None, None, None]
 
@@ -85,10 +85,10 @@ class App(ctk.CTk):
         # also make buttons un-focusable by clicking outside of a widget
         self.bind_all("<1>", lambda event: self.entryconfig(event))
 
-        # init right click menu for layouts:
+        # init right click menu for views:
         self.rclickmenu = create_menu(self)
 
-        # save layouts on closing:
+        # save views on closing:
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
         ####################################
@@ -102,15 +102,15 @@ class App(ctk.CTk):
         self.bottomframe = ctk.CTkFrame(self, width = (XDIM/2 - XPAD*2), height = (YDIM - YPAD*2))
         self.bottomframe.grid(row=1, column=1, sticky='')
 
-        # LEFT SIDEBAR (layout selection)
+        # LEFT SIDEBAR (view selection)
         self.lframe = ctk.CTkScrollableFrame(self, corner_radius=0, height=YDIM)
         self.lframe.grid(row=0, column=0, rowspan=2, sticky='nsew')
         self.lframe.grid_columnconfigure(0,weight=1)
-        self.newlayoutbutton = ctk.CTkButton(self.lframe, corner_radius=0, height=40, border_spacing=10,
-                                                text="New Layout", 
+        self.newviewbutton = ctk.CTkButton(self.lframe, corner_radius=0, height=40, border_spacing=10,
+                                                text="New View", 
                                                 font=self.STANDARDFONT,
-                                                anchor='w', command=self.new_layout)
-        self.newlayoutbutton.grid(row=0, column=0, sticky='ew')
+                                                anchor='w', command=self.new_view)
+        self.newviewbutton.grid(row=0, column=0, sticky='ew')
 
         # TOP (button grid)
         self.topframe = ctk.CTkFrame(self, width = (XDIM/2 - XPAD*2), height = (YDIM - YPAD*2))
@@ -134,25 +134,25 @@ class App(ctk.CTk):
         self.helper, self.txtbox, self.action, self.button_clr = button_settings(self)
 
         ####################################
-        # PROFILES
+        # VIEWS
         ####################################
 
-        # store empty profile for creating new ones
-        self.empty_profile = Layout('Layout 1', self.buttons)
+        # store empty view -- blank slate for new views
+        self.empty_view = View('View 1', self.buttons)
 
-        # load layouts
+        # load views
         self.used_colors = {FC_DEFAULT, FC_EMPTY}
         try:
-            self.load_layouts()
+            self.load_views()
         except (FileNotFoundError, KeyError):
-            self.layouts = [self.empty_profile]
-        self.layouts[0]._main = True
-        self.current_layout = 0
+            self.views = [self.empty_view]
+        self.views[0]._main = True
+        self.current_view = 0
         self.refresh_sidebar(True)
     
     # return callbacks to be used as globals
     def _callbacks(self):
-        return [do_nothing, self.player.__call__, self.player.reset, self.player.toggle_pause, self.open_layout, None]
+        return [do_nothing, self.player.__call__, self.player.reset, self.player.toggle_pause, self.open_view, None]
     
     def init_hotkeys(self):
         self.hotkeys = macros.init_hotkeys(self.buttons) # inherits from threading.thread
@@ -216,8 +216,8 @@ class App(ctk.CTk):
         elif action_text == 'Pause Media':
             self.destroy_flex()
 
-        elif action_text == 'Open Layout':
-            self.init_layoutbutton()
+        elif action_text == 'Open View':
+            self.init_viewbutton()
 
         elif action_text == 'Perform Macro':
             pass # not implemented
@@ -245,7 +245,7 @@ class App(ctk.CTk):
                     self.current_button.set_action(3)
                     self.current_button.set_text('Pause Audio', default=True)
 
-                elif action_text == 'Open Layout':
+                elif action_text == 'Open View':
                     self.current_button.set_action(4)
                     self.current_button.set_text(self.current_button.arg, default=True)
 
@@ -275,101 +275,101 @@ class App(ctk.CTk):
 
         self.flex_button = button_clr
 
-    # sets flex button to layout optionmenu
-    def init_layoutbutton(self):
+    # sets flex button to view optionmenu
+    def init_viewbutton(self):
         # display media button on bottomframe
 
         self.destroy_flex()
-        layouts = [str(l) for l in self.layouts]
+        views = [str(l) for l in self.views]
 
-        button_layout = ctk.CTkOptionMenu(self.bottomframe,
+        button_view = ctk.CTkOptionMenu(self.bottomframe,
                                 command=self.arg_from_options, 
-                                values=layouts)
+                                values=views)
         # button identity not new
-        if self.current_button.arg in layouts:
-            button_layout.set(self.current_button.arg)
+        if self.current_button.arg in views:
+            button_view.set(self.current_button.arg)
 
         # set button default text
-        self.arg_from_options(button_layout.get())
+        self.arg_from_options(button_view.get())
 
-        button_layout.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
+        button_view.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
 
-        self.flex_button = button_layout
+        self.flex_button = button_view
 
-    def new_layout(self):
+    def new_view(self):
         # reset active button
         if self.current_button is not None:
                 self.current_button.configure(border_color=BC_DEFAULT)
                 self.current_button = None
 
         self.destroy_flex()
-        # self.layouts.append(Layout(f'Layout {len(self.layouts)+1}', self.buttons)) # copy current layout
+        # self.views.append(View(f'View {len(self.views)+1}', self.buttons)) # copy current view
         
-        # append empty layout
-        self.layouts.append(Layout(f'Layout {len(self.layouts)+1}', self.empty_profile.configs, False))
+        # append empty view
+        self.views.append(View(f'View {len(self.views)+1}', self.empty_view.configs, False))
         self.refresh_sidebar()
 
-    # delete layout that was right clicked
-    def delete_layout(self):
-        to_delete = self.layout_edit_ix
-        if self.layouts[to_delete].ismain():
-            self.helper.configure(text='CANNOT DELETE MAIN PROFILE')
+    # delete view that was right clicked
+    def delete_view(self):
+        to_delete = self.view_edit_ix
+        if self.views[to_delete].ismain():
+            self.helper.configure(text='CANNOT DELETE MAIN VIEW')
         else:
-            self.switch_layout(to_delete-1)
-            self.layouts.pop(to_delete)
+            self.switch_view(to_delete-1)
+            self.views.pop(to_delete)
             self.refresh_sidebar()
 
     # init rename process
-    def rename_layout1(self):
+    def rename_view1(self):
         # get current name
-        curname = str(self.layouts[self.layout_edit_ix])
+        curname = str(self.views[self.view_edit_ix])
 
         # create text variable
-        layout_name = tk.StringVar(self.bottomframe, value='')
+        view_name = tk.StringVar(self.bottomframe, value='')
 
         # change right-clicked button to entry widget
-        self.layoutbuttons[self.layout_edit_ix].destroy()
+        self.viewbuttons[self.view_edit_ix].destroy()
         rename_entry = ctk.CTkEntry(self.lframe, corner_radius=0, height=40, 
                                       placeholder_text=curname, 
                                       font=self.STANDARDFONT, 
-                                      textvariable=layout_name
+                                      textvariable=view_name
                                       )
-        rename_entry.grid(row=self.layout_edit_ix+1, column=0, sticky='ew') # +1 for new layout button
+        rename_entry.grid(row=self.view_edit_ix+1, column=0, sticky='ew') # +1 for new view button
         rename_entry.insert(0, curname)
         rename_entry.icursor(len(curname))
         rename_entry.focus()
 
         # bind unfocus and Enter (key) to finish the rename process
-        rename_entry.bind('<FocusOut>', self.rename_layout2)
-        rename_entry.bind('<Return>', self.rename_layout2)
+        rename_entry.bind('<FocusOut>', self.rename_view2)
+        rename_entry.bind('<Return>', self.rename_view2)
 
-        # add entry widget to layoutbuttons
-        self.layoutbuttons[self.layout_edit_ix] = rename_entry
+        # add entry widget to viewbuttons
+        self.viewbuttons[self.view_edit_ix] = rename_entry
 
     # complete rename process
-    def rename_layout2(self, event): 
-        name = self.layoutbuttons[self.layout_edit_ix].get()
-        self.layouts[self.layout_edit_ix].rename(name)
+    def rename_view2(self, event): 
+        name = self.viewbuttons[self.view_edit_ix].get()
+        self.views[self.view_edit_ix].rename(name)
         self.refresh_sidebar() # changes name and reverts entry widget to buttons
 
-    def open_layout(self, layout_name):
-        layout_enum = -1
-        for i in range(len(self.layouts)):
-            if str(self.layouts[i]) == layout_name:
-                layout_enum = i
+    def open_view(self, view_name):
+        view_enum = -1
+        for i in range(len(self.views)):
+            if str(self.views[i]) == view_name:
+                view_enum = i
                 break
 
-        if layout_enum == -1:
-            raise ValueError(layout_name)
+        if view_enum == -1:
+            raise ValueError(view_name)
 
-        self.layout_enum = layout_enum
-        self.after(0, self.switch_layout)
+        self.view_enum = view_enum
+        self.after(0, self.switch_view)
 
-    def switch_layout(self, layout_enum=None):
+    def switch_view(self, view_enum=None):
 
-        if layout_enum is None:
-            if self.layout_enum is not None:
-                layout_enum = self.layout_enum
+        if view_enum is None:
+            if self.view_enum is not None:
+                view_enum = self.view_enum
             else:
                 raise TypeError
         
@@ -379,29 +379,29 @@ class App(ctk.CTk):
                 self.current_button = None
         self.destroy_flex()
         
-        if layout_enum == self.current_layout: return
+        if view_enum == self.current_view: return
 
-        # save current layout:
-        self.layouts[self.current_layout] = Layout(str(self.layouts[self.current_layout]), self.buttons, ismain=self.layouts[self.current_layout].ismain())
+        # save current view:
+        self.views[self.current_view] = View(str(self.views[self.current_view]), self.buttons, ismain=self.views[self.current_view].ismain())
 
-        # on the sidebar, highlight new layout button and unhighlight old one:
-        self.layoutbuttons[layout_enum].configure(fg_color=('gray70', 'gray30'))
-        self.layoutbuttons[self.current_layout].configure(fg_color='transparent')
+        # on the sidebar, highlight new view button and unhighlight old one:
+        self.viewbuttons[view_enum].configure(fg_color=('gray70', 'gray30'))
+        self.viewbuttons[self.current_view].configure(fg_color='transparent')
 
-        # open new layout:      
-        self.current_layout = layout_enum
-        self.layouts[self.current_layout].to_buttons(self.buttons)
-        # print(f'switched to layout {layout_enum+1}')
+        # open new view:      
+        self.current_view = view_enum
+        self.views[self.current_view].to_buttons(self.buttons)
+        # print(f'switched to view {view_enum+1}')
 
-    # write all layout info to disk
-    def save_layouts(self):#, layout_enum):
-        # save current layout:
+    # write all view info to disk
+    def save_views(self):#, view_enum):
+        # save current view:
         self.reset_bordercols()
-        self.layouts[self.current_layout] = Layout(str(self.layouts[self.current_layout]), self.buttons)
+        self.views[self.current_view] = View(str(self.views[self.current_view]), self.buttons)
 
         data = {}
-        for layout in self.layouts:
-            data[str(layout)] = layout.configs
+        for view in self.views:
+            data[str(view)] = view.configs
 
         # load save file:
         with open('savedata.json', 'r') as f:
@@ -415,44 +415,44 @@ class App(ctk.CTk):
         
         print("saved data to savedata.json")
 
-    def load_layouts(self):
+    def load_views(self):
         with open('savedata.json', 'r') as f:
             data = json.load(f)
 
         data = data[self.key_layout]
         
-        self.layouts = []
+        self.views = []
         for k,v in data.items():
-            self.layouts.append(Layout(k, v, False))
+            self.views.append(View(k, v, False))
         
-        self.layouts[0].to_buttons(self.buttons, set_keys=True)
+        self.views[0].to_buttons(self.buttons, set_keys=True)
 
         # load colors
-        for layout in self.layouts:
-            self.used_colors |= layout.colors()
+        for view in self.views:
+            self.used_colors |= view.colors()
 
     def refresh_sidebar(self, init=False):
         if not init:
-            for button in self.layoutbuttons:
+            for button in self.viewbuttons:
                 button.destroy()
-        self.layoutbuttons = []
-        for i,layout in enumerate(self.layouts):
-            fg_color = ('gray70', 'gray30') if i==self.current_layout else 'transparent'
-            newbutton = LayoutButton(self.lframe, corner_radius=0, height=40, border_spacing=10,
-                                      text=str(layout), fg_color=fg_color, 
+        self.viewbuttons = []
+        for i,view in enumerate(self.views):
+            fg_color = ('gray70', 'gray30') if i==self.current_view else 'transparent'
+            newbutton = ViewButton(self.lframe, corner_radius=0, height=40, border_spacing=10,
+                                      text=str(view), fg_color=fg_color, 
                                       font=self.STANDARDFONT, hover_color=('gray70', 'gray30'),
                                       anchor='w', 
-                                      command=partial(self.switch_layout,i)
+                                      command=partial(self.switch_view,i)
                                       )
-            newbutton.grid(row=i+1, column=0, sticky='ew') # +1 for new layout button
+            newbutton.grid(row=i+1, column=0, sticky='ew') # +1 for new view button
 
             # add right click callback and bind right click to it
             newbutton.set_callback(self, i)
             newbutton.bind("<Button-3>", newbutton.rclick)
 
-            self.layoutbuttons.append(newbutton)
+            self.viewbuttons.append(newbutton)
 
-    # sets arg and defaulttext of current button (currently used for layout action)
+    # sets arg and defaulttext of current button (currently used for view action)
     def arg_from_options(self, arg):
         self.current_button.set_arg(arg)
         self.current_button.set_text(arg, default=True)
@@ -531,8 +531,8 @@ class App(ctk.CTk):
         except AttributeError: # from color picker
             pass
 
-    def rclick_popup(self, event, layout_ix):
-        self.layout_edit_ix = layout_ix
+    def rclick_popup(self, event, view_ix):
+        self.view_edit_ix = view_ix
         try:
             self.rclickmenu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -545,7 +545,7 @@ class App(ctk.CTk):
         self.helper.configure(text='NO BUTTON SELECTED')
 
     def _on_closing(self):
-        self.save_layouts()
+        self.save_views()
         self.destroy()
 
 ####################################
@@ -742,7 +742,7 @@ class HKWindow(ctk.CTkToplevel):
 
 # container for button grid parameters
 # does not store most (c)tkinter attrs because those stay fixed
-class Layout():
+class View():
     def __init__(self, name, data, got_buttons=True, ismain=False):
         if got_buttons:
             self.configs = []
@@ -793,8 +793,8 @@ class Layout():
     def __repr__(self):
         return self.name
 
-# ctk button wrapper that stores right-click menu callback for layout buttons
-class LayoutButton(ctk.CTkButton):
+# ctk button wrapper that stores right-click menu callback for view buttons
+class ViewButton(ctk.CTkButton):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -906,9 +906,9 @@ def create_menu(app):
                 bd=1,
                 relief=None
                 )
-    m.add_command(label = 'Rename', command=app.rename_layout1)
+    m.add_command(label = 'Rename', command=app.rename_view1)
     m.add_separator()
-    m.add_command(label = 'Delete', command=app.delete_layout)
+    m.add_command(label = 'Delete', command=app.delete_view)
 
     return m
 
