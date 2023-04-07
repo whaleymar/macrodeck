@@ -94,5 +94,11 @@
         "y":0,
         "attr":"regular",
         "modifier":null
+    },
+    "<NUMLOCK>":{
+        "x":0,
+        "y":0,
+        "attr":"regular",
+        "modifier":null
     }
 }

@@ -22,6 +22,9 @@ ctk.set_default_color_theme("blue")  # Themes: blue (default), dark-blue, green
 def do_nothing():
     pass
 
+def ctkimage(path, size):
+    return ctk.CTkImage(Image.open(path), size=size)
+
 ####################################
 # CONSTANTS
 ####################################
@@ -32,7 +35,7 @@ YDIM = 800 # 700 good for normal numpad
 XPAD = 5
 YPAD = 5
 
-DEBUG = True
+DEBUG = False
 
 SAMPLE_TEXT=''
 
@@ -55,10 +58,11 @@ DEFAULT_MODIFIER = MODIFIERS[3]
 
 ICON_SIZE = (26,23)
 ACTION_VALUES = ['No Action', 'Play Media', 'Stop Media', 'Pause Media', 'Open View', 'Perform Macro']
-ACTION_ICONS = [None, ctk.CTkImage(Image.open('assets/action_audio.png'), size=ICON_SIZE), ctk.CTkImage(Image.open('assets/action_mute.png'), size=ICON_SIZE), 
-                ctk.CTkImage(Image.open('assets/action_pause.png'), size=ICON_SIZE), ctk.CTkImage(Image.open('assets/action_openview.png'), size=ICON_SIZE), 
-                ctk.CTkImage(Image.open('assets/action_macro.png'), size=ICON_SIZE)]
-# ACTION_ICONS = [None, None, None, None, None, None]
+ACTION_ICONS = [None, ctkimage('assets/action_audio.png', ICON_SIZE), ctkimage('assets/action_mute.png', ICON_SIZE),
+                ctkimage('assets/action_pause.png', ICON_SIZE),ctkimage('assets/action_openview.png', ICON_SIZE),
+                ctkimage('assets/action_macro.png', ICON_SIZE)]
+
+BACK_ICON = ctk.CTkImage(Image.open('assets/action_back.png'), size=ICON_SIZE)
 
 BC_DEFAULT = '#565B5E' 
 BC_ACTIVE = '#FFFFFF'
@@ -134,6 +138,14 @@ class App(ctk.CTk):
         self.helper, self.txtbox, self.action, self.button_clr = button_settings(self)
 
         ####################################
+        # IMAGES
+        ####################################
+        try:
+            self.load_imgs()
+        except (FileNotFoundError, KeyError):
+            self.images = [icon for icon in ACTION_ICONS if icon is not None]
+
+        ####################################
         # VIEWS
         ####################################
 
@@ -158,11 +170,15 @@ class App(ctk.CTk):
         self.hotkeys = macros.init_hotkeys(self.buttons) # inherits from threading.thread
         self.hotkeys.start()
 
+    # not currently used
     def kill_hotkeys(self):
         self.hotkeys.stop()
         self.hotkeys = None
     
     def button_callback(self, button_ix):
+        if self.current_button is self.buttons[button_ix]:
+            self.current_button.run_action()
+            return
         self.reset_bordercols()
         self.helpertxt_clear()
         self.current_button = self.buttons[button_ix]
@@ -172,7 +188,7 @@ class App(ctk.CTk):
         self.current_button.configure(border_color=BC_ACTIVE)
         b_action = ACTION_VALUES[self.current_button.action_enum]
         self.action.set(b_action)
-        self.set_action(b_action)
+        self.set_actionbutton(b_action)
 
     def selectfile(self):
         self.helpertxt_clear() # in case there is a "NO FILE SELECTED" message
@@ -247,7 +263,8 @@ class App(ctk.CTk):
 
                 elif action_text == 'Open View':
                     self.current_button.set_action(4)
-                    self.current_button.set_text(self.current_button.arg, default=True)
+                    self.current_button.set_arg(0)
+                    self.current_button.set_text(str(self.views[0]), default=True)
 
                 elif action_text == 'Perform Macro':
                     self.current_button.set_action(5)
@@ -257,7 +274,7 @@ class App(ctk.CTk):
                     raise ValueError(action_text)
 
             self.set_actionbutton(action_text)
-            self.current_button.show_image()
+            self.current_button.set_image()
         else:
             self.action.set(ACTION_VALUES[0])
             self.helpertxt_nobtn()
@@ -270,7 +287,8 @@ class App(ctk.CTk):
 
         button_clr = ctk.CTkButton(self.bottomframe, 
                                 command=self.selectfile, 
-                                text='Choose File')
+                                text='Choose File',
+                                font=self.STANDARDFONT)
         button_clr.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
 
         self.flex_button = button_clr
@@ -283,14 +301,15 @@ class App(ctk.CTk):
         views = [str(l) for l in self.views]
 
         button_view = ctk.CTkOptionMenu(self.bottomframe,
-                                command=self.arg_from_options, 
-                                values=views)
-        # button identity not new
-        if self.current_button.arg in views:
-            button_view.set(self.current_button.arg)
+                                command=self.set_view_arg, 
+                                values=views,
+                                font=self.STANDARDFONT)
+        
+        button_view.set(str(self.views[self.current_button.arg]))
 
         # set button default text
-        self.arg_from_options(button_view.get())
+        if self.current_button is not self.buttons[self.back_button] or self.views[self.current_view].ismain():
+            self.set_view_arg(button_view.get())
 
         button_view.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
 
@@ -352,7 +371,7 @@ class App(ctk.CTk):
         self.views[self.view_edit_ix].rename(name)
         self.refresh_sidebar() # changes name and reverts entry widget to buttons
 
-    def open_view(self, view_name):
+    def name_to_enum(self, view_name):
         view_enum = -1
         for i in range(len(self.views)):
             if str(self.views[i]) == view_name:
@@ -361,10 +380,15 @@ class App(ctk.CTk):
 
         if view_enum == -1:
             raise ValueError(view_name)
+        
+        return view_enum
 
+    # keyboard listener must use this callback 
+    def open_view(self, view_enum):
         self.view_enum = view_enum
         self.after(0, self.switch_view)
 
+    # this is only called by mainloop
     def switch_view(self, view_enum=None):
 
         if view_enum is None:
@@ -389,45 +413,62 @@ class App(ctk.CTk):
         self.viewbuttons[self.current_view].configure(fg_color='transparent')
 
         # open new view:      
-        self.current_view = view_enum
-        self.views[self.current_view].to_buttons(self.buttons)
-        # print(f'switched to view {view_enum+1}')
+        if self.views[view_enum].ismain():
+            self.buttons[self.back_button].unlock()
+        self.views[view_enum].to_buttons(self.buttons, self.images)
 
-    # write all view info to disk
-    def save_views(self):#, view_enum):
+        # handle back button & locking
+        if not self.views[view_enum].ismain():
+            self.buttons[self.back_button].back_button()
+
+        self.current_view = view_enum
+
+    # write view and image info to disk
+    def save_data(self):
         # save current view:
         self.reset_bordercols()
         self.views[self.current_view] = View(str(self.views[self.current_view]), self.buttons)
 
-        data = {}
+        data_views = {}
         for view in self.views:
-            data[str(view)] = view.configs
+            data_views[str(view)] = view.configs
 
         # load save file:
         with open('savedata.json', 'r') as f:
             savedata = json.load(f)
 
-        # overwrite relevant part:
-        savedata[self.key_layout] = data
+        # overwrite views for layout we're using:
+        savedata['layouts'][self.key_layout] = data_views
+
+        # overwrite image array
+        savedata['images'] = [img._light_image.filename for img in self.images]
 
         with open('savedata.json', 'w') as f:
             json.dump(savedata, f)
         
         print("saved data to savedata.json")
 
+    def load_imgs(self):
+        with open('savedata.json', 'r') as f:
+            data = json.load(f)
+
+        data = data['images']
+
+        self.images = [ctkimage(elem, ICON_SIZE) for elem in data]
+
     def load_views(self):
         with open('savedata.json', 'r') as f:
             data = json.load(f)
 
-        data = data[self.key_layout]
+        data = data['layouts'][self.key_layout]
         
         self.views = []
         for k,v in data.items():
             self.views.append(View(k, v, False))
         
-        self.views[0].to_buttons(self.buttons, set_keys=True)
+        self.views[0].to_buttons(self.buttons, self.images, set_keys=True)
 
-        # load colors
+        # store colors
         for view in self.views:
             self.used_colors |= view.colors()
 
@@ -452,10 +493,10 @@ class App(ctk.CTk):
 
             self.viewbuttons.append(newbutton)
 
-    # sets arg and defaulttext of current button (currently used for view action)
-    def arg_from_options(self, arg):
-        self.current_button.set_arg(arg)
-        self.current_button.set_text(arg, default=True)
+    # sets arg and defaulttext of current button for "Open View" action
+    def set_view_arg(self, view_name):
+        self.current_button.set_arg(self.name_to_enum(view_name))
+        self.current_button.set_text(view_name, default=True)
 
     def choosecolor(self):
         if self.current_button is not None:
@@ -469,8 +510,7 @@ class App(ctk.CTk):
                 # exited without choosing a color
                 return
             self.used_colors.add(color)
-            self.current_button.configure(fg_color=color)
-            self.current_button.configure(hover_color=hovercolor(color))
+            self.current_button.set_colors(fg_color=color, border_color=None, hover_color=hovercolor(color))
         else:
             self.helpertxt_nobtn()
 
@@ -502,6 +542,30 @@ class App(ctk.CTk):
                 return
             
             self.hotkeys = macros.reset_hotkeys(self.buttons, self.hotkeys)
+        else:
+            self.helpertxt_nobtn()
+
+    def imgconfig(self):
+        self.helpertxt_clear()
+        if self.current_button is not None:
+            win = IMGWindow(self.images, self.STANDARDFONT)
+            newimg = win.get()
+            if newimg is None:
+                return
+            
+            # check if this image is new 
+            for ix,img in enumerate(self.images):
+                fname = img._light_image.filename
+                if os.path.basename(newimg._light_image.filename) == os.path.basename(fname):
+                    # set image, don't add to self.images 
+                    self.current_button.set_image(ix, self.images)
+                    return
+            
+            self.images.append(newimg)
+
+            # change button image
+            self.current_button.set_image(len(self.images)-1, self.images)
+
         else:
             self.helpertxt_nobtn()
     
@@ -545,7 +609,7 @@ class App(ctk.CTk):
         self.helper.configure(text='NO BUTTON SELECTED')
 
     def _on_closing(self):
-        self.save_views()
+        self.save_data()
         self.destroy()
 
 ####################################
@@ -559,7 +623,9 @@ class BUTTON(ctk.CTkButton):
 
         self.arg = None
         self.default_text = '' # if button text is empty, fill with default_text
+        self.img_ix = None
         self.action_enum = 0
+        self._lock = False
 
     def activate(self):
         # only set default color if we're coming from deactivation
@@ -572,9 +638,30 @@ class BUTTON(ctk.CTkButton):
         self.set_text('')
         self.set_action(0)
         self.set_arg(None)
+        self.set_image()
+
+    def lock(self):
+        self._lock = True
+
+    def unlock(self):
+        self._lock = False
+
+    def locked(self):
+        return self._lock
+
+    def back_button(self):
+        self.unlock()
+        self.deactivate()
+        self.set_action(4) # open view
+        self.set_arg(0) # point to main view
+        self.configure(image=BACK_ICON)
+        self._draw()
+        self.lock()
 
     # stores action fxn call enum
     def set_action(self, enum):
+        if self.locked():
+            return
         self.action_enum = enum
 
     def get_action(self):
@@ -582,6 +669,8 @@ class BUTTON(ctk.CTkButton):
 
     # stores action fxn call arg
     def set_arg(self, arg):
+        if self.locked():
+            return
         self.arg = arg
     
     def get_arg(self):
@@ -600,6 +689,9 @@ class BUTTON(ctk.CTkButton):
     def set_text(self, text, default=False):
         # set button text
         # if default: sets default text attribute
+
+        if self.locked():
+            return
 
         # sometimes this setting gets overwritten by other ops, so resetting it here for max coverage
         if self._text_label is None:
@@ -624,6 +716,9 @@ class BUTTON(ctk.CTkButton):
         return self.cget('text'), self.default_text
     
     def set_colors(self, fg_color=None, border_color=None, hover_color=None):
+        if self.locked():
+            return
+        
         if fg_color is not None:
             self.configure(fg_color=fg_color)
         if border_color is not None:
@@ -634,9 +729,21 @@ class BUTTON(ctk.CTkButton):
     def get_colors(self):
         return self.cget('fg_color'), self.cget('border_color'), self.cget('hover_color')
     
-    def show_image(self):
-        self.configure(image=ACTION_ICONS[self.action_enum])
+    def set_image(self, ix=None, images=None):
+        # show given image or default image if not given
+        if self.locked():
+            return
+
+        self.img_ix = ix
+        
+        if ix is None:
+            self.configure(image=ACTION_ICONS[self.action_enum])
+        else:
+            self.configure(image=images[ix])
         self._draw()
+
+    def get_image(self):
+        return self.img_ix
 
     def run_action(self):
         if self.action_enum is None: return
@@ -685,7 +792,7 @@ class HKWindow(ctk.CTkToplevel):
         HEIGHT=250
         self.geometry(f'{WIDTH}x{HEIGHT}')
         
-        self.title("Choose Color")
+        self.title("Choose HotKey")
         self.maxsize(WIDTH, HEIGHT)
         self.minsize(WIDTH, HEIGHT)
         self.attributes("-topmost", True)
@@ -740,6 +847,96 @@ class HKWindow(ctk.CTkToplevel):
         self.grab_release()
         self.destroy()
 
+# popup window for configuring button image
+class IMGWindow(ctk.CTkToplevel):
+    def __init__(self, images, STANDARDFONT):
+        super().__init__()
+
+        imgs_per_row = 4
+
+        WIDTH = 250
+        HEIGHT=300
+        self.geometry(f'{WIDTH}x{HEIGHT}')
+        
+        self.title("Choose Image")
+        self.lift()
+        self.after(10)
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
+        
+        self.frame = ctk.CTkFrame(master=self)
+        self.frame.grid(padx=5, pady=5, sticky="nswe")
+
+        self.sframe = ctk.CTkScrollableFrame(master=self.frame)
+        self.sframe.grid(row=0, column=0, sticky='nsew')
+
+        self.images = [img for img in images if img is not None]
+        self.current_image = 0
+
+        self.buttons = []
+        for i,img in enumerate(self.images):
+
+            button = ctk.CTkButton(
+                master=self.sframe,
+                width=32,
+                height=32,
+                fg_color=FC_EMPTY,
+                hover_color=HC_EMPTY,
+                border_color=BC_DEFAULT,
+                command=partial(self.button_callback, i),
+                image=img,
+                text=''
+            )
+            x = i%imgs_per_row
+            y = int(i/imgs_per_row)
+            button.grid(row=y, column=x, padx=5, pady=5, sticky='nsew')
+            self.buttons.append(button)
+
+        self.newimg = ctk.CTkButton(master=self.frame, text="New Image", command=self.new_img)
+        self.newimg.grid(row=1, column=0, padx=5, pady=5, sticky='nsew')
+
+        self.button = ctk.CTkButton(master=self.frame, text="OK", command=self._ok_event)
+        self.button.grid(row=2, column=0, padx=5, pady=5, sticky='nsew')
+        
+        self.grab_set()
+
+    def button_callback(self, ix):
+        # print('pressed button', ix)
+        self.current_image = ix
+        self._ok_event()
+
+    def new_img(self):
+        print('getting new img')
+        filetypes = (
+                ('PNG files', '*.png'),
+                ('All Files', '*.*')
+        )
+
+        f = tk.filedialog.askopenfilename(
+            title='Choose image',
+            filetypes=filetypes
+        )
+
+        if f:
+            newimg = ctk.CTkImage(Image.open(f), size=ICON_SIZE)
+            self.current_image = len(self.images)
+            self.images.append(newimg)
+            self._ok_event()
+
+    def get(self):
+        self._img = None
+        self.master.wait_window(self)
+        return self._img
+    
+    def _ok_event(self, event=None):
+        self._img = self.images[self.current_image]
+        self.grab_release()
+        self.destroy()
+
+    def _on_closing(self):
+        self._img = None
+        self.grab_release()
+        self.destroy()
+
 # container for button grid parameters
 # does not store most (c)tkinter attrs because those stay fixed
 class View():
@@ -748,7 +945,7 @@ class View():
             self.configs = []
             for button in data:
                 self.configs.append(
-                    [button.get_action(), button.get_arg(), button.get_keys(), button.get_text(), button.get_colors()]
+                    [button.get_action(), button.get_arg(), button.get_keys(), button.get_text(), button.get_colors(), button.get_image()]
                 )
         else:
             self.configs = data
@@ -757,16 +954,22 @@ class View():
         self._main = ismain
     
     # mutates buttons
-    def to_buttons(self, buttons, set_keys=False):
+    def to_buttons(self, buttons, images, set_keys=False):
         for config, button in zip(self.configs, buttons):
             button.default_text = config[3][1] # have to do this before set_text
-            # button.set_text(config[3][0])
             button.set_action(config[0])
             button.set_arg(config[1])
-            # button.set_colors(config[4][0], config[4][1], config[4][2])
-            # button.show_image()
+
+            # get image
+            if config[5] is None:
+                image = ACTION_ICONS[config[0]]
+            else:
+                image = images[config[5]]
+            button.img_ix = config[5] 
+
+            # all methods that call button.configure should go in here       
             button.configure(text=config[3][0][:35], fg_color=config[4][0], border_color=config[4][1], hover_color=config[4][2],
-                             image=ACTION_ICONS[button.action_enum])
+                             image=image)
             
             if button._text_label is None:
                 button.configure(text=' ')
@@ -779,7 +982,7 @@ class View():
     def colors(self):
         # returns set of colors used in self.configs
         # only returns fg_color (ix 1)
-        return set([self.configs[i][-1][0] for i in range(len(self.configs))])
+        return set([self.configs[i][4][0] for i in range(len(self.configs))])
     
     def ismain(self):
         return self._main
@@ -817,6 +1020,8 @@ def numpad_buttongrid(app, key_layout):
     buttons = []
     frame = app.topframe
 
+    app.back_button = -1
+
     for i,key in enumerate(button_mapping.keys()):
         xadjustment = BUTTON_SIZES[button_mapping[key]['attr']][1]
         yadjustment = BUTTON_SIZES[button_mapping[key]['attr']][0]
@@ -846,6 +1051,12 @@ def numpad_buttongrid(app, key_layout):
                     rowspan=yadjustment, columnspan=xadjustment)
         button.grid_propagate(0) # prevents vertical stretching with text
         buttons.append(button)
+
+        if button_mapping[key]['y']==0 and button_mapping[key]['x']==0:
+            app.back_button=i
+    
+    if app.back_button<0:
+        raise ValueError(f"{key_layout} missing button in top left corner (required for back button)")
     return buttons
 
 def button_settings(app):
@@ -884,15 +1095,14 @@ def button_settings(app):
                                   command=app.hkconfig, 
                                   text='Configure Hotkey',
                                   font=app.STANDARDFONT)
-    button_hkey.grid(row=3, column=0, columnspan=2, padx=XPAD, pady=YPAD, sticky='new')
+    button_hkey.grid(row=3, column=1, columnspan=1, padx=XPAD, pady=YPAD, sticky='new')
 
-    # button to simulate key press (for debugging)
-    if DEBUG:
-        button_kpress = ctk.CTkButton(frame, 
-                               command=app.pressbutton, 
-                               text='Simulate Key Press',
-                               font=app.STANDARDFONT)
-        button_kpress.grid(row=4, column=0, columnspan=2, padx=XPAD, pady=YPAD, sticky='new')
+    # configure image:
+    button_img = ctk.CTkButton(frame, 
+                                  command=app.imgconfig, 
+                                  text='Image',
+                                  font=app.STANDARDFONT)
+    button_img.grid(row=3, column=0, columnspan=1, padx=XPAD, pady=YPAD, sticky='new')
 
     return helper, txtbox, action, button_clr
 
@@ -914,6 +1124,7 @@ def create_menu(app):
 
 if __name__=='__main__':
     arg1 = 'layouts/numpad_tall.json'
+    # arg1 = 'layouts/numpad.json'
     app = App(arg1)
     ACTION_CALLS = app._callbacks()
 
