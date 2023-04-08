@@ -5,9 +5,9 @@ import os
 import util
 import macros
 from functools import partial
-import time
 import json
 from PIL import Image
+import webbrowser as web
 
 ####################################
 # WINDOW APPEARANCE
@@ -57,10 +57,10 @@ KEYS = ['<NUMPAD0>','<NUMPAD1>','<NUMPAD2>','<NUMPAD3>','<NUMPAD4>',
 DEFAULT_MODIFIER = MODIFIERS[3]
 
 ICON_SIZE = (26,23)
-ACTION_VALUES = ['No Action', 'Play Media', 'Stop Media', 'Pause Media', 'Open View', 'Perform Macro']
+ACTION_VALUES = ['No Action', 'Play Media', 'Stop Media', 'Pause Media', 'Open View', 'Perform Macro', 'Open Web Page']
 ACTION_ICONS = [None, ctkimage('assets/action_audio.png', ICON_SIZE), ctkimage('assets/action_mute.png', ICON_SIZE),
                 ctkimage('assets/action_pause.png', ICON_SIZE),ctkimage('assets/action_openview.png', ICON_SIZE),
-                ctkimage('assets/action_macro.png', ICON_SIZE)]
+                ctkimage('assets/action_macro.png', ICON_SIZE), ctkimage('assets/action_web.png', ICON_SIZE)]
 
 BACK_ICON = ctk.CTkImage(Image.open('assets/action_back.png'), size=ICON_SIZE)
 
@@ -122,7 +122,7 @@ class App(ctk.CTk):
 
 
         ####################################
-        # GLOBALS
+        # MISC
         ####################################
 
         self.text_shared = tk.StringVar(self.bottomframe, value='')
@@ -131,7 +131,8 @@ class App(ctk.CTk):
         self.current_button = None
 
         self.initialdir = '/' # where we start when opening a file
-        self.flex_button=None
+        self.flex_button = None
+        self.flex_text = None
 
         self.key_layout = os.path.basename(key_layout)[:-5] # name of layout file without extension
         self.buttons = numpad_buttongrid(self, key_layout)
@@ -164,7 +165,7 @@ class App(ctk.CTk):
     
     # return callbacks to be used as globals
     def _callbacks(self):
-        return [do_nothing, self.player.__call__, self.player.reset, self.player.toggle_pause, self.open_view, None]
+        return [do_nothing, self.player.__call__, self.player.reset, self.player.toggle_pause, self.open_view, None, web.open]
     
     def init_hotkeys(self):
         self.hotkeys = macros.init_hotkeys(self.buttons) # inherits from threading.thread
@@ -188,7 +189,7 @@ class App(ctk.CTk):
         self.current_button.configure(border_color=BC_ACTIVE)
         b_action = ACTION_VALUES[self.current_button.action_enum]
         self.action.set(b_action)
-        self.set_actionbutton(b_action)
+        self.set_actionbutton(b_action, False)
 
     def selectfile(self):
         self.helpertxt_clear() # in case there is a "NO FILE SELECTED" message
@@ -216,15 +217,15 @@ class App(ctk.CTk):
         else:
             self.helpertxt_nobtn()
 
-    # displays correct button based on option menu value
-    def set_actionbutton(self, action_text):
+    # displays correct widget based on option menu value
+    def set_actionbutton(self, action_text, changed):
         self.text_shared.set(self.current_button.cget("text"))
 
         if action_text == 'No Action':
             self.destroy_flex()
         
         elif action_text == 'Play Media':
-            self.mediabutton()
+            self.init_media_button()
 
         elif action_text == 'Stop Media':
             self.destroy_flex()
@@ -233,10 +234,15 @@ class App(ctk.CTk):
             self.destroy_flex()
 
         elif action_text == 'Open View':
-            self.init_viewbutton()
+            self.init_view_button()
 
         elif action_text == 'Perform Macro':
             pass # not implemented
+
+        elif action_text == 'Open Web Page':
+            self.init_URL_entry()
+            if not changed:
+                self.flex_text.set(self.current_button.arg)
 
         else:
             raise ValueError(action_text)
@@ -270,17 +276,20 @@ class App(ctk.CTk):
                     self.current_button.set_action(5)
                     pass # not implemented
 
+                elif action_text == 'Open Web Page':
+                    self.current_button.set_action(6)
+
                 else:
                     raise ValueError(action_text)
 
-            self.set_actionbutton(action_text)
+            self.set_actionbutton(action_text, True)
             self.current_button.set_image()
         else:
             self.action.set(ACTION_VALUES[0])
             self.helpertxt_nobtn()
 
     # sets flex button to media
-    def mediabutton(self):
+    def init_media_button(self):
         # display media button on bottomframe
 
         self.destroy_flex()
@@ -294,14 +303,12 @@ class App(ctk.CTk):
         self.flex_button = button_clr
 
     # sets flex button to view optionmenu
-    def init_viewbutton(self):
-        # display media button on bottomframe
-
+    def init_view_button(self):
         self.destroy_flex()
         views = [str(l) for l in self.views]
 
         button_view = ctk.CTkOptionMenu(self.bottomframe,
-                                command=self.set_view_arg, 
+                                command=self.arg_from_dropdown, 
                                 values=views,
                                 font=self.STANDARDFONT)
         
@@ -309,11 +316,22 @@ class App(ctk.CTk):
 
         # set button default text
         if self.current_button is not self.buttons[self.back_button] or self.views[self.current_view].ismain():
-            self.set_view_arg(button_view.get())
+            self.arg_from_dropdown(button_view.get())
 
         button_view.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
 
         self.flex_button = button_view
+
+    def init_URL_entry(self):
+        self.destroy_flex()
+
+        self.flex_text = tk.StringVar(self.bottomframe, value='')
+        self.flex_text.trace('w',self.arg_from_text) # sets URL argument
+
+        entry = ctk.CTkEntry(self.bottomframe, textvariable=self.flex_text)
+        entry.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
+        self.flex_button = entry
+
 
     def new_view(self):
         # reset active button
@@ -493,8 +511,11 @@ class App(ctk.CTk):
 
             self.viewbuttons.append(newbutton)
 
+    def arg_from_text(self, *args):
+        self.current_button.set_arg(self.flex_text.get())
+
     # sets arg and defaulttext of current button for "Open View" action
-    def set_view_arg(self, view_name):
+    def arg_from_dropdown(self, view_name):
         self.current_button.set_arg(self.name_to_enum(view_name))
         self.current_button.set_text(view_name, default=True)
 
