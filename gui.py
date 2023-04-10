@@ -8,6 +8,7 @@ from functools import partial
 import json
 from PIL import Image
 import webbrowser as web
+import key_categories
 
 ####################################
 # WINDOW APPEARANCE
@@ -44,25 +45,18 @@ BUTTON_SIZES = {
     'tall':(2,1),
     'wide':(1,2)
 }
-MODIFIERS = ['none','<ctrl>','<shift>','<alt>',
-             '<ctrl>+<shift>', '<ctrl>+<alt>', 
-             '<shift>+<alt>', '<ctrl>+<shift>+<alt>']
-KEYS = ['<NUMPAD0>','<NUMPAD1>','<NUMPAD2>','<NUMPAD3>','<NUMPAD4>',
-        '<NUMPAD5>','<NUMPAD6>','<NUMPAD7>','<NUMPAD8>','<NUMPAD9>',
-        '+','-','*','/','<DECIMAL>','<RETURN>',
-        '<F1>','<F2>','<F3>','<F4>','<F5>','<F6>',
-        '<F7>','<F8>','<F9>','<F10>','<F11>','<F12>',
-        '<F13>','<F14>','<F15>','<F16>','<F17>','<F18>',
-        '<F19>','<F20>','<F21>','<F22>','<F23>','<F24>']
-DEFAULT_MODIFIER = MODIFIERS[3]
 
-ICON_SIZE = (26,23)
+DEFAULT_MODIFIER = key_categories.MODIFIERKEYSHOTKEY[3]
+
+ICON_SIZE = (23,23)
+ICON_SIZE_WIDE = (26,23)
 ACTION_VALUES = ['No Action', 'Play Media', 'Stop Media', 'Pause Media', 'Open View', 'Perform Macro', 'Open Web Page']
-ACTION_ICONS = [None, ctkimage('assets/action_audio.png', ICON_SIZE), ctkimage('assets/action_mute.png', ICON_SIZE),
+ACTION_ARGS = [None, None, None, None, 0, None, ""] # default action args
+ACTION_ICONS = [None, ctkimage('assets/action_audio.png', ICON_SIZE_WIDE), ctkimage('assets/action_mute.png', ICON_SIZE),
                 ctkimage('assets/action_pause.png', ICON_SIZE),ctkimage('assets/action_openview.png', ICON_SIZE),
                 ctkimage('assets/action_macro.png', ICON_SIZE), ctkimage('assets/action_web.png', ICON_SIZE)]
 
-BACK_ICON = ctk.CTkImage(Image.open('assets/action_back.png'), size=ICON_SIZE)
+BACK_ICON = ctkimage('assets/action_back.png', size=ICON_SIZE)
 
 BC_DEFAULT = '#565B5E' 
 BC_ACTIVE = '#FFFFFF'
@@ -84,6 +78,9 @@ class App(ctk.CTk):
 
         # init VLC player
         self.player = util.VLCPlayer()
+
+        # init macro keyboard
+        self.keyboard = macros.keyboard()
 
         # make all widgets focus-able so I can click out of entry box:
         # also make buttons un-focusable by clicking outside of a widget
@@ -133,18 +130,30 @@ class App(ctk.CTk):
         self.initialdir = '/' # where we start when opening a file
         self.flex_button = None
         self.flex_text = None
+        self.global_checkbox = None
+        self.to_press = None
 
         self.key_layout = os.path.basename(key_layout)[:-5] # name of layout file without extension
         self.buttons = numpad_buttongrid(self, key_layout)
         self.helper, self.txtbox, self.action, self.button_clr = button_settings(self)
 
+        # load save:
+        try:
+            with open('savedata.json', 'r') as f:
+                savedata = json.load(f)
+        except FileNotFoundError:
+            savedata = None
+
         ####################################
         # IMAGES
         ####################################
-        try:
-            self.load_imgs()
-        except (FileNotFoundError, KeyError):
+        if savedata is None:
             self.images = [icon for icon in ACTION_ICONS if icon is not None]
+        else:
+            try:
+                self.load_imgs(savedata)
+            except KeyError:
+                self.images = [icon for icon in ACTION_ICONS if icon is not None]
 
         ####################################
         # VIEWS
@@ -155,31 +164,43 @@ class App(ctk.CTk):
 
         # load views
         self.used_colors = {FC_DEFAULT, FC_EMPTY}
-        try:
-            self.load_views()
-        except (FileNotFoundError, KeyError):
+        if savedata is None:
             self.views = [self.empty_view]
+        else:
+            try:
+                self.load_views(savedata)
+            except KeyError:
+                self.views = [self.empty_view]
         self.views[0]._main = True
         self.current_view = 0
         self.refresh_sidebar(True)
+
+        # set global buttons:
+        if savedata is not None:
+            try:
+                self.load_globals(savedata)
+            except KeyError:
+                pass
     
     # return callbacks to be used as globals
     def _callbacks(self):
-        return [do_nothing, self.player.__call__, self.player.reset, self.player.toggle_pause, self.open_view, None, web.open]
+        return [do_nothing, self.player.__call__, self.player.reset, self.player.toggle_pause, self.open_view, self.schedule_macro, web.open]
     
     def init_hotkeys(self):
         self.hotkeys = macros.init_hotkeys(self.buttons) # inherits from threading.thread
         self.hotkeys.start()
 
-    # not currently used
     def kill_hotkeys(self):
         self.hotkeys.stop()
         self.hotkeys = None
     
     def button_callback(self, button_ix):
+        # run button action if it was already selected
         if self.current_button is self.buttons[button_ix]:
             self.current_button.run_action()
             return
+        
+        # reset dynamic vars
         self.reset_bordercols()
         self.helpertxt_clear()
         self.current_button = self.buttons[button_ix]
@@ -190,6 +211,18 @@ class App(ctk.CTk):
         b_action = ACTION_VALUES[self.current_button.action_enum]
         self.action.set(b_action)
         self.set_actionbutton(b_action, False)
+
+        if not self.views[self.current_view].ismain():
+            return
+
+        if button_ix != self.back_button:
+            self.init_global_checkbox()
+            if self.current_button._global:
+                self.global_checkbox.select()
+            else:
+                self.global_checkbox.deselect()
+        else:
+            self.destroy_global_checkbox()
 
     def selectfile(self):
         self.helpertxt_clear() # in case there is a "NO FILE SELECTED" message
@@ -217,7 +250,7 @@ class App(ctk.CTk):
         else:
             self.helpertxt_nobtn()
 
-    # displays correct widget based on option menu value
+    # displays correct widget based on button action
     def set_actionbutton(self, action_text, changed):
         self.text_shared.set(self.current_button.cget("text"))
 
@@ -237,7 +270,7 @@ class App(ctk.CTk):
             self.init_view_button()
 
         elif action_text == 'Perform Macro':
-            pass # not implemented
+            self.init_macro_button()
 
         elif action_text == 'Open Web Page':
             self.init_URL_entry()
@@ -247,48 +280,51 @@ class App(ctk.CTk):
         else:
             raise ValueError(action_text)
 
+    # sets button action index
+    # sets default action text (if applicable)
+    # sets default action argument (if applicable)
     def set_action(self, action_text):
-        if self.current_button is not None:
-            
-            # check if we are mapping a real action
-            if action_text == 'No Action':
-                self.current_button.deactivate()
-            else:
-                self.current_button.activate()
-
-                if action_text == 'Play Media':
-                    self.current_button.set_action(1)
-
-                elif action_text == 'Stop Media':
-                    self.current_button.set_action(2)
-                    self.current_button.set_text('Stop Audio', default=True)
-
-                elif action_text == 'Pause Media':
-                    self.current_button.set_action(3)
-                    self.current_button.set_text('Pause Audio', default=True)
-
-                elif action_text == 'Open View':
-                    self.current_button.set_action(4)
-                    self.current_button.set_arg(0)
-                    self.current_button.set_text(str(self.views[0]), default=True)
-
-                elif action_text == 'Perform Macro':
-                    self.current_button.set_action(5)
-                    pass # not implemented
-
-                elif action_text == 'Open Web Page':
-                    self.current_button.set_action(6)
-
-                else:
-                    raise ValueError(action_text)
-
-            self.set_actionbutton(action_text, True)
-            self.current_button.set_image()
-        else:
+        if self.current_button is None:
             self.action.set(ACTION_VALUES[0])
             self.helpertxt_nobtn()
+            return
+            
+        # check if we are mapping a real action
+        if action_text == 'No Action':
+            self.current_button.deactivate() # sets arg ix to 0 & changes appearance
+        else:
+            self.current_button.activate()
 
-    # sets flex button to media
+            if action_text == 'Play Media':
+                self.current_button.set_action(1)
+
+            elif action_text == 'Stop Media':
+                self.current_button.set_action(2)
+                self.current_button.set_text('Stop Audio', default=True)
+
+            elif action_text == 'Pause Media':
+                self.current_button.set_action(3)
+                self.current_button.set_text('Pause Audio', default=True)
+
+            elif action_text == 'Open View':
+                self.current_button.set_action(4)
+                self.current_button.set_text(str(self.views[0]), default=True)
+
+            elif action_text == 'Perform Macro':
+                self.current_button.set_action(5)
+                pass # not implemented
+
+            elif action_text == 'Open Web Page':
+                self.current_button.set_action(6)
+
+            else:
+                raise ValueError(action_text)
+
+        self.current_button.set_arg(ACTION_ARGS[self.current_button.get_action()])
+        self.set_actionbutton(action_text, True)
+        self.current_button.set_image()
+
+    # sets flex button to media chooser button
     def init_media_button(self):
         # display media button on bottomframe
 
@@ -332,6 +368,45 @@ class App(ctk.CTk):
         entry.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
         self.flex_button = entry
 
+    # set flex button to macro
+    def init_macro_button(self):
+        self.destroy_flex()
+
+        button = ctk.CTkButton(self.bottomframe, 
+                                command=self.macroconfig, 
+                                text='Set Macro',
+                                font=self.STANDARDFONT)
+        button.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
+
+        self.flex_button = button
+
+    def init_global_checkbox(self):
+        if self.global_checkbox is not None:
+            return
+        self.global_checkbox = ctk.CTkCheckBox(master=self.bottomframe, text="Global", 
+                                               onvalue=True, offvalue=False, 
+                                               command = self.global_button)
+        self.global_checkbox.grid(row=4, column=0, padx=XPAD, pady=YPAD, sticky='nsw')
+
+    def destroy_flex(self):
+        if self.flex_button is not None:
+            self.flex_button.destroy()
+            self.flex_button = None
+
+    def destroy_global_checkbox(self):
+        if self.global_checkbox is not None:
+            self.global_checkbox.destroy()
+            self.global_checkbox = None
+
+    def global_button(self):
+        if self.current_button is None:
+            self.helpertxt_nobtn()
+            return
+        
+        if self.global_checkbox.get():
+            self.current_button._global = True
+        else:
+            self.current_button._global = False
 
     def new_view(self):
         # reset active button
@@ -352,7 +427,8 @@ class App(ctk.CTk):
         if self.views[to_delete].ismain():
             self.helper.configure(text='CANNOT DELETE MAIN VIEW')
         else:
-            self.switch_view(to_delete-1)
+            if to_delete == self.current_view:
+                self.switch_view(to_delete-1)
             self.views.pop(to_delete)
             self.refresh_sidebar()
 
@@ -424,7 +500,7 @@ class App(ctk.CTk):
         if view_enum == self.current_view: return
 
         # save current view:
-        self.views[self.current_view] = View(str(self.views[self.current_view]), self.buttons, ismain=self.views[self.current_view].ismain())
+        self.views[self.current_view].update(self.buttons)
 
         # on the sidebar, highlight new view button and unhighlight old one:
         self.viewbuttons[view_enum].configure(fg_color=('gray70', 'gray30'))
@@ -433,6 +509,8 @@ class App(ctk.CTk):
         # open new view:      
         if self.views[view_enum].ismain():
             self.buttons[self.back_button].unlock()
+        else:
+            self.destroy_global_checkbox()
         self.views[view_enum].to_buttons(self.buttons, self.images)
 
         # handle back button & locking
@@ -445,8 +523,9 @@ class App(ctk.CTk):
     def save_data(self):
         # save current view:
         self.reset_bordercols()
-        self.views[self.current_view] = View(str(self.views[self.current_view]), self.buttons)
+        self.views[self.current_view].update(self.buttons)
 
+        # gather layout data
         data_views = {}
         for view in self.views:
             data_views[str(view)] = view.configs
@@ -461,24 +540,25 @@ class App(ctk.CTk):
         # overwrite image array
         savedata['images'] = [img._light_image.filename for img in self.images]
 
+        # overwrite globals array
+        if 'globals' not in savedata.keys():
+            savedata['globals']={}
+        savedata['globals'][self.key_layout] = [button._global for button in self.buttons]
+
         with open('savedata.json', 'w') as f:
             json.dump(savedata, f)
         
         print("saved data to savedata.json")
 
-    def load_imgs(self):
-        with open('savedata.json', 'r') as f:
-            data = json.load(f)
+    def load_imgs(self, savedata):
 
-        data = data['images']
+        data = savedata['images']
 
         self.images = [ctkimage(elem, ICON_SIZE) for elem in data]
 
-    def load_views(self):
-        with open('savedata.json', 'r') as f:
-            data = json.load(f)
+    def load_views(self, savedata):
 
-        data = data['layouts'][self.key_layout]
+        data = savedata['layouts'][self.key_layout]
         
         self.views = []
         for k,v in data.items():
@@ -489,6 +569,12 @@ class App(ctk.CTk):
         # store colors
         for view in self.views:
             self.used_colors |= view.colors()
+
+    # load global button status into main view
+    def load_globals(self, savedata):
+        global_buttons = savedata['globals'][self.key_layout]
+        for i in range(len(self.buttons)):
+            self.buttons[i]._global = global_buttons[i]
 
     def refresh_sidebar(self, init=False):
         if not init:
@@ -590,20 +676,44 @@ class App(ctk.CTk):
         else:
             self.helpertxt_nobtn()
     
-    def pressbutton(self): # for debugging
-        if self.current_button is not None:
-            self.current_button.run_action()
-        else:
+    def macroconfig(self):
+        self.helpertxt_clear()
+        if self.current_button is None:
             self.helpertxt_nobtn()
+            return
+
+        win = MacroWindow(self.current_button.arg, self.STANDARDFONT)
+        newmacro = win.get()
+        if newmacro is None:
+            return
+        
+        # convert modifiers with map
+        for i in range(len(newmacro)):
+            if newmacro[i][0]=='':continue
+            newmacro[i] = ("+".join([key_categories.MODIFIER_TO_VK[key] for key in newmacro[i][0].split('+')]), newmacro[i][1])
+
+        self.current_button.set_arg(newmacro)
+
+    def schedule_macro(self, keyset):
+        self.to_press = keyset
+        self.after(100, self.run_macro)
+        self.kill_hotkeys()
+
+    def run_macro(self):
+        if self.to_press is None:
+            return
+        
+        for keys in self.to_press:
+            keys = [key for key in keys if len(key)>0] # remove empty modifier
+            keys = [macros.to_pynput(key) for seq in keys for key in seq.split('+')] # split modifier and flatten
+            self.keyboard.press_keys(keys) # send keypress
+
+        self.to_press = None
+        self.init_hotkeys() # restart hotkeys
 
     def reset_bordercols(self):
         for button in self.buttons:
             button.configure(border_color=BC_DEFAULT)
-
-    def destroy_flex(self):
-        if self.flex_button is not None:
-            self.flex_button.destroy()
-            self.flex_button = None
 
     def entryconfig(self, event):
         if isinstance(event.widget, ctk.windows.ctk_tk.CTk):
@@ -618,10 +728,8 @@ class App(ctk.CTk):
 
     def rclick_popup(self, event, view_ix):
         self.view_edit_ix = view_ix
-        try:
-            self.rclickmenu.tk_popup(event.x_root, event.y_root)
-        finally:
-            self.rclickmenu.grab_release()
+        self.rclickmenu.tk_popup(event.x_root, event.y_root)
+        self.rclickmenu.grab_release()
 
     def helpertxt_clear(self):
         self.helper.configure(text='')
@@ -647,6 +755,7 @@ class BUTTON(ctk.CTkButton):
         self.img_ix = None
         self.action_enum = 0
         self._lock = False
+        self._global = False
 
     def activate(self):
         # only set default color if we're coming from deactivation
@@ -774,8 +883,11 @@ class BUTTON(ctk.CTkButton):
             try:
                 ACTION_CALLS[self.action_enum]()
             except TypeError:
-                self.master.master.helper.configure(text='NO FILE SELECTED')
+                self.master.master.helper.configure(text='Error: Button Not Configured')
     
+    def dump(self):
+        return self.get_action(), self.get_arg(), self.get_keys(), self.get_text(), self.get_colors(), self.get_image()
+
     # override this to stop buttons from resizing
     def _create_grid(self):
         # messing with weighting so action icon doesn't move with text
@@ -828,13 +940,13 @@ class HKWindow(ctk.CTkToplevel):
 
         # modifier keys option:
         self.modifier = ctk.CTkOptionMenu(master=self.frame,
-                                          values=MODIFIERS,
+                                          values=key_categories.MODIFIERKEYSHOTKEY,
                                           font=STANDARDFONT)
-        self.modifier.set(modifier[:-1] if modifier !="" else MODIFIERS[0]) # we store "" instead of "none"
+        self.modifier.set(modifier[:-1] if modifier !="" else key_categories.MODIFIERKEYSHOTKEY[0]) # we store "" instead of "none"
         
         # key: 
         self.key = ctk.CTkOptionMenu(master=self.frame,
-                                     values=KEYS,
+                                     values=key_categories.NUMPADKEYS+key_categories.FUNCTIONKEYS,
                                      font=STANDARDFONT)
         self.key.set(key)
 
@@ -854,17 +966,17 @@ class HKWindow(ctk.CTkToplevel):
         self.grab_set()
 
     def get(self):
-        self._macro = None
+        self._hotkey = None
         self.master.wait_window(self)
-        return self._macro
+        return self._hotkey
     
     def _ok_event(self, event=None):
-        self._macro = self.modifier.get(), self.key.get()
+        self._hotkey = self.modifier.get(), self.key.get()
         self.grab_release()
         self.destroy()
 
     def _on_closing(self):
-        self._macro = None
+        self._hotkey = None
         self.grab_release()
         self.destroy()
 
@@ -965,9 +1077,7 @@ class View():
         if got_buttons:
             self.configs = []
             for button in data:
-                self.configs.append(
-                    [button.get_action(), button.get_arg(), button.get_keys(), button.get_text(), button.get_colors(), button.get_image()]
-                )
+                self.configs.append(button.dump())
         else:
             self.configs = data
         
@@ -977,6 +1087,14 @@ class View():
     # mutates buttons
     def to_buttons(self, buttons, images, set_keys=False):
         for config, button in zip(self.configs, buttons):
+            # don't change button if global
+            if button._global:
+                if self.ismain():
+                    button.unlock()
+                else:
+                    button.lock()
+                continue
+
             button.default_text = config[3][1] # have to do this before set_text
             button.set_action(config[0])
             button.set_arg(config[1])
@@ -1010,6 +1128,19 @@ class View():
     
     def rename(self, name):
         self.name = name
+
+    def update(self, buttons):
+        # assert len(self.configs) == len(buttons)
+        for i in range(len(self.configs)):
+            button = buttons[i]
+            if button._global:
+                if self.ismain():
+                    self.configs[i] = button.dump()
+                    button.lock()
+                else:
+                    pass
+            else:
+                self.configs[i] = button.dump()
     
     def __str__(self):
         return self.__repr__()
@@ -1028,7 +1159,156 @@ class ViewButton(ctk.CTkButton):
     
     def rclick(self, event):
         self.callback(event, self.index)
+
+class MacroWindow(ctk.CTkToplevel):
+    def __init__(self, current_macros, font):
+        super().__init__()
+        WIDTH = 550
+        HEIGHT=450
+        self.geometry(f'{WIDTH}x{HEIGHT}')
+        
+        self.title("Choose Macro")
+        self.maxsize(WIDTH, HEIGHT)
+        self.minsize(WIDTH, HEIGHT)
+        self.attributes("-topmost", True)
+        self.lift()
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self.after(10)
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
+        
+        self.frame = ctk.CTkFrame(master=self)
+        self.frame.grid_columnconfigure(0, weight=1)
+        self.frame.grid_rowconfigure(0, weight=1)
+        self.frame.grid(sticky="nsew")
+
+        self.sframe = ctk.CTkScrollableFrame(master = self.frame, width=WIDTH, height=HEIGHT)
+        self.sframe.grid_columnconfigure(0, weight=1)
+        self.sframe.grid_columnconfigure(1, weight=1)
+        self.sframe.grid_rowconfigure(0, weight=1)
+        self.sframe.grid(row=0, column=0, sticky='', padx=XPAD, pady=YPAD)
+
+        self.row = 0
+        self.font = font
+
+        self._modifiers = []
+        self._keys = []
+        self._deletebuttons = []
+        self._newbuttons = []
+
+        if current_macros is None:
+            self.new_row()
+        else:
+            for modifier,key in current_macros:
+                self.new_row(modifier = modifier.replace("MENU","ALT").replace("LWIN","WIN"), key=key)
+        
+        self.okbutton = ctk.CTkButton(master=self.frame, text="OK", command=self._ok_event)
+        self.okbutton.grid(row=1, column=0, sticky='',  padx=XPAD, pady=YPAD)
+        
+        self.grab_set()
+
+    def new_row(self, modifier = None, key = None, ix=None):
+        if ix is None:
+            ix = self.row
+
+        # modifier keys option:
+        self._modifiers.insert(ix, ctk.CTkOptionMenu(master=self.sframe,
+                                          values=key_categories.MODIFIERKEYSMACRO,
+                                          font=self.font))
+        self._modifiers[ix].set(key_categories.MODIFIERKEYSMACRO[0] if modifier is None else modifier)
+        
+        # key: 
+        self._keys.insert(ix, ctk.CTkOptionMenu(master=self.sframe,
+                                    values=[''],
+                                    font=self.font))
+        
+        # create sub-menus for key categories:
+        def subKeyMenu(name, keys):
+            newKeyMenu = tk.Menu(master = self._keys[ix]._dropdown_menu, 
+                                 tearoff=0,
+                                 fg='white',
+                                 background=FC_EMPTY,
+                                 activebackground='gray30',
+                                 bd=1,
+                                 relief=None)
+            for _key in keys:
+                newKeyMenu.add_command(label=_key, command=partial(self._keys[ix].set, _key))
+            self._keys[ix]._dropdown_menu.add_cascade(label=name, menu=newKeyMenu)
+
+        subKeyMenu('Alphanumeric', key_categories.ALPHANUMERICKEYS)
+        subKeyMenu('Numpad', key_categories.NUMPADKEYS)
+        subKeyMenu('Function', key_categories.FUNCTIONKEYS)
+        # subKeyMenu('System', key_categories.SYSTEMKEYS) # not working
+        subKeyMenu('Misc', key_categories.MISCKEYS)
+        # subKeyMenu('Mouse', key_categories.MOUSEKEYS) # not working 
+        subKeyMenu('Media', key_categories.MEDIAKEYS)
+
+        self._keys[ix].set('' if key is None else key)
+
+        # new delete button:
+        self._deletebuttons.append(ctk.CTkButton(master = self.sframe, 
+                                                 width=32,
+                                                 text="X",
+                                                 font=self.font,
+                                                 command = partial(self.delete_row, self.row)))
+        
+        # new new button
+        self._newbuttons.append(ctk.CTkButton(master = self.sframe, 
+                                                 width=32,
+                                                 text="+",
+                                                 font=self.font,
+                                                 command = partial(self.new_row, None, None, self.row+1)))
+        
+        # place new/delete buttons on last row
+        self._deletebuttons[self.row].grid(row=self.row, column=3, padx=XPAD, pady=YPAD, sticky='nse')
+        self._newbuttons[self.row].grid(row=self.row, column=2, padx=XPAD, pady=YPAD, sticky='nse')
+
+        self.row+=1
+
+        # move drop down menus down
+        for i in range(ix, len(self._modifiers)):
+            self._modifiers[i].grid(row=i, column=0, padx=XPAD, pady=YPAD, sticky='nsew')
+            self._keys[i].grid(row=i, column=1, padx=XPAD, pady=YPAD, sticky='nsew')
+
+    def delete_row(self, ix):
+        self._modifiers[ix].destroy()
+        self._keys[ix].destroy()
+        self._modifiers.pop(ix)
+        self._keys.pop(ix)
+
+        # remove last delete button
+        self._deletebuttons[-1].destroy()
+        self._deletebuttons.pop()
+
+        # remove last new button
+        self._newbuttons[-1].destroy()
+        self._newbuttons.pop()
+
+        self.row-=1
+
+        if len(self._modifiers) == ix:
+            return
+        
+        # move lower buttons up
+        for i in range(ix, len(self._modifiers)):
+            self._modifiers[i].grid(row=i, column=0, padx=XPAD, pady=YPAD, sticky='nsew')
+            self._keys[i].grid(row=i, column=1, padx=XPAD, pady=YPAD, sticky='nsew')
+
+    def get(self):
+        self._macro = None
+        self.master.wait_window(self)
+        return self._macro
     
+    def _ok_event(self, event=None):
+        self._macro = [(modifier.get(), key.get()) for modifier, key in zip(self._modifiers, self._keys) if (len(key.get())>0 or len(modifier.get())>0)]
+        self.grab_release()
+        self.destroy()
+
+    def _on_closing(self):
+        self._macro = None
+        self.grab_release()
+        self.destroy()
+
 ####################################
 # LAYOUT SETUP
 ####################################
@@ -1104,21 +1384,21 @@ def button_settings(app):
                                font=app.STANDARDFONT)
     action.grid(row=2, column=0, padx=XPAD, pady=YPAD, sticky='w')
 
-    # Config Button Appearance
+    # Button Color
     button_clr = ctk.CTkButton(frame, 
                                command=app.choosecolor, 
                                text='Button Color',
                                font=app.STANDARDFONT)
     button_clr.grid(row=1, column=1, padx=XPAD, pady=YPAD, sticky='w')
 
-    # configure hotkey:
+    # Button HotKey:
     button_hkey = ctk.CTkButton(frame, 
                                   command=app.hkconfig, 
                                   text='Configure Hotkey',
                                   font=app.STANDARDFONT)
     button_hkey.grid(row=3, column=1, columnspan=1, padx=XPAD, pady=YPAD, sticky='new')
 
-    # configure image:
+    # Button Image:
     button_img = ctk.CTkButton(frame, 
                                   command=app.imgconfig, 
                                   text='Image',

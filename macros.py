@@ -1,10 +1,11 @@
-from pynput.keyboard import GlobalHotKeys # threading/thread wrapper for hotkeys
+from pynput.keyboard import GlobalHotKeys, Key, Controller, KeyCode # threading/thread wrapper for hotkeys
 from pynput._util import win32_vks # getting keycodes
 import time
 import threading # playlist worker thread
 from multiprocessing import Queue # communication btwn threads
 from util import VLCPlayer, index_library
 import os
+# import keycodes
 
 ##############################
 # Hot Key Functions: #########
@@ -46,13 +47,11 @@ def printstatus():
 	print(lib.lib)
 
 ##############################
-# Threading Stuff: ###########
+# HotKeys: ###########
 ##############################
 
 def init_hotkeys(buttons):
 	hkmap = hotkeymap(buttons)
-	# for key in hkmap:
-	# 	print(key)
 	return GlobalHotKeys(hkmap)
 
 def reset_hotkeys(buttons, cur_thread=None):
@@ -81,6 +80,22 @@ def playlist_worker():
 			time.sleep(1)
 			continue
 
+##############################
+# Macros: ###########
+##############################
+
+class keyboard(Controller):
+	def press_keys(self, keys, seconds=0.0):
+		for key in keys:
+			self.press(key)
+		if seconds:
+			time.sleep(seconds)
+		for key in keys:
+			self.release(key)
+		
+		time.sleep(0.1)
+		return
+
 #######################################################
 # Helper Functions (for threads and hotkeys): ##########
 #######################################################
@@ -91,7 +106,12 @@ def q_clear():
 	time.sleep(0.05) # makes sure another song doesn't accidentally get played
 
 def keycode(key):
+	if key[0]=='<' and key[-1]=='>':
+		key = key[1:-1]
 	return eval(f"win32_vks.{key.upper()}")
+
+def to_pynput(key):
+	return key if len(key)==1 else KeyCode.from_vk(keycode(key))
 
 if __name__=='__main__':
 
