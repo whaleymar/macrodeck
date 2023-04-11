@@ -10,7 +10,7 @@ class View():
             for button in data:
                 self.configs.append(button.dump())
         else:
-            self.configs = data
+            self.configs = [elem[:] for elem in data]
         
         self.name = name
         self._main = ismain

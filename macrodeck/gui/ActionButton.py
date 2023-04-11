@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from macrodeck.gui.style import FC_DEFAULT, FC_EMPTY, WRAPLEN, ICON_SIZE
+from macrodeck.gui.style import FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE
 from macrodeck.gui.util import hovercolor, ctkimage
 
 BACK_ICON = ctkimage('assets/action_back.png', size=ICON_SIZE)
@@ -27,7 +27,11 @@ class ActionButton(ctk.CTkButton):
     def activate(self):
         # only set default color if we're coming from deactivation
         if self.cget('fg_color')==FC_EMPTY:
-            self.set_colors(FC_DEFAULT, None, hovercolor(FC_DEFAULT))
+            if self.grid_info()['row']%2==0:
+                col = FC_DEFAULT
+            else:
+                col = FC_DEFAULT2
+            self.set_colors(col, None, hovercolor(col))
 
     def deactivate(self):
         self.set_colors(FC_EMPTY, None, hovercolor(FC_EMPTY))

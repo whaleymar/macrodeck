@@ -9,3 +9,11 @@ def hovercolor(hexstring):
 
 def ctkimage(path, size):
     return ctk.CTkImage(Image.open(path), size=size)
+
+def genericSwap(sequence, i, j):
+    # swaps elements at indices i and j in sequence
+    # mutates the list
+
+    tmp = sequence[i]
+    sequence[i] = sequence[j]
+    sequence[j] = tmp

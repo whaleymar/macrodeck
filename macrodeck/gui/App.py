@@ -1,6 +1,6 @@
 import tkinter as tk
 import customtkinter as ctk
-from macrodeck.gui.util import hovercolor, to_rgb, ctkimage
+from macrodeck.gui.util import hovercolor, to_rgb, ctkimage, genericSwap
 import os
 import macrodeck.VLCPlayer as VLCPlayer
 import macrodeck.Keyboard as Keyboard
@@ -11,7 +11,7 @@ from macrodeck.gui.ColorPicker import AskColor # from https://github.com/Akascap
 from macrodeck.gui.HotkeyWindow import HotkeyWindow
 from macrodeck.gui.ImageWindow import ImageWindow
 from macrodeck.gui.MacroWindow import MacroWindow
-from macrodeck.gui.style import BC_ACTIVE, BC_DEFAULT, FC_DEFAULT, FC_EMPTY, WRAPLEN, ICON_SIZE, ICON_SIZE_WIDE
+from macrodeck.gui.style import BC_ACTIVE, BC_DEFAULT, FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE, ICON_SIZE_WIDE
 from functools import partial
 import json
 import webbrowser as web
@@ -20,7 +20,7 @@ import webbrowser as web
 # WINDOW APPEARANCE
 ####################################
 ctk.set_appearance_mode("System")  # Modes: system (default), light, dark
-ctk.set_default_color_theme("blue")  # Themes: blue (default), dark-blue, green
+ctk.set_default_color_theme("dark-blue")  # Themes: blue (default), dark-blue, green
 
 ####################################
 # HELPERS
@@ -56,11 +56,18 @@ ACTION_ICONS = [None, ctkimage('assets/action_audio.png', ICON_SIZE_WIDE), ctkim
 HC_EMPTY = hovercolor(FC_EMPTY)
 HC_DEFAULT = hovercolor(FC_DEFAULT)
 
+FLEX_WIDGET_ROW = 2
+FLEX_WIDGET_COL = 1
+FLEX_WIDGET_COLSPAN = 2
+
 class App(ctk.CTk):
     def __init__(self, key_layout):
         super().__init__()
 
         self.geometry(f"{XDIM}x{YDIM}")
+        self.iconbitmap('assets/icon.ico')
+        self.title("MacroDeck")
+
         self.STANDARDFONT = ctk.CTkFont(family='Arial', weight='bold', size=14) # default size is 13
         self.SMALLFONT = ctk.CTkFont(family='Arial', size=14) # default size is 13
 
@@ -80,6 +87,10 @@ class App(ctk.CTk):
         # save views on closing:
         self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
+        # create menu bar
+        self.config(menu = self.createMenuBar())
+        self.viewmode = 0 # 0: edit, 1: focused
+
         ####################################
         # FRAMES
         ####################################
@@ -89,7 +100,8 @@ class App(ctk.CTk):
 
         # BOTTOM (button settings)
         self.bottomframe = ctk.CTkFrame(self, width = (XDIM/2 - XPAD*2), height = (YDIM - YPAD*2))
-        self.bottomframe.grid(row=1, column=1, sticky='')
+        self.bottomframe.grid(row=1, column=1, sticky='s')
+        self.hideEditMenu()
 
         # LEFT SIDEBAR (view selection)
         self.lframe = ctk.CTkScrollableFrame(self, corner_radius=0, height=YDIM)
@@ -102,8 +114,10 @@ class App(ctk.CTk):
         self.newviewbutton.grid(row=0, column=0, sticky='ew')
 
         # TOP (button grid)
-        self.topframe = ctk.CTkFrame(self, width = (XDIM/2 - XPAD*2), height = (YDIM - YPAD*2))
-        self.topframe.grid(row=0, column=1, sticky='')
+        buttonGridXDim = XDIM - XPAD*2
+        buttonGridYDim = YDIM - YPAD*2
+        self.topframe = ctk.CTkFrame(self, width = buttonGridXDim, height = buttonGridYDim)
+        self.topframe.grid(row=0, column=1, sticky='n')
 
 
         ####################################
@@ -151,7 +165,7 @@ class App(ctk.CTk):
         self.empty_view = View('View 1', self.buttons)
 
         # load views
-        self.used_colors = {FC_DEFAULT, FC_EMPTY}
+        self.used_colors = {FC_DEFAULT, FC_DEFAULT2, FC_EMPTY}
         if savedata is None:
             self.views = [self.empty_view]
         else:
@@ -170,19 +184,34 @@ class App(ctk.CTk):
             except KeyError:
                 pass
     
-    # return callbacks to be used as globals
     def _callbacks(self):
+        """
+        returns list of action functions
+        """
+
         return [do_nothing, self.player.__call__, self.player.reset, self.player.toggle_pause, self.open_view, self.schedule_macro, web.open]
     
     def init_hotkeys(self):
+        """
+        starts hotkey keyboard listener
+        """
+
         self.hotkeys = Keyboard.init_hotkeys(self.buttons) # inherits from threading.thread
         self.hotkeys.start()
 
     def kill_hotkeys(self):
+        """
+        stops hotkey keyboard listener
+        """
+
         self.hotkeys.stop()
         self.hotkeys = None
     
     def button_callback(self, button_ix):
+        """
+        runs when we click a button w/ the mouse
+        """
+
         # run button action if it was already selected
         if self.current_button is self.buttons[button_ix]:
             self.current_button.run_action()
@@ -193,12 +222,18 @@ class App(ctk.CTk):
         self.helpertxt_clear()
         self.current_button = self.buttons[button_ix]
 
-        # set current button options in GUI:
-        self.text_shared.set(self.current_button.cget("text"))
+        # highlight selected button
         self.current_button.configure(border_color=BC_ACTIVE)
+
+        if self.viewmode == 1:
+            return
+
+        # set current button details in editor:
+        self.text_shared.set(self.current_button.cget("text"))
         b_action = ACTION_VALUES[self.current_button.action_enum]
         self.action.set(b_action)
         self.set_actionbutton(b_action, False)
+        self.showEditMenu()
 
         if not self.views[self.current_view].ismain():
             return
@@ -212,34 +247,79 @@ class App(ctk.CTk):
         else:
             self.destroy_global_checkbox()
 
-    def selectfile(self):
-        self.helpertxt_clear() # in case there is a "NO FILE SELECTED" message
-        if self.current_button is not None:
-            filetypes = (
-                ('MP3 files', '*.mp3'),
-                ('All Files', '*.*')
-            )
+    def hideEditMenu(self):
+        self.bottomframe.grid_remove()
 
-            f = tk.filedialog.askopenfilename(
-                title='Choose song',
-                initialdir=self.initialdir,
-                filetypes=filetypes
-            )
+    def showEditMenu(self):
+        self.bottomframe.grid()
+
+    def hideSidebar(self):
+        self.lframe.grid_remove()
+
+    def showSidebar(self):
+        self.lframe.grid()
+
+    def changeViewMode(self):
+        if self.viewmode == 0:
+            self.viewmode = 1
+            self.hideEditMenu()
+            self.hideSidebar()
             
-            if f:
-                self.initialdir = os.path.dirname(f) # remember dir we used
+            # change dimensions of window
+            self.geometry(f"{self.topframe.winfo_width()}x{self.topframe.winfo_height()}")
 
-                # configure button text
-                self.current_button.set_text(os.path.basename(f).split('.')[0], default=True)
-                self.text_shared.set(self.current_button.cget("text")) # re-fill entry text in case it changed
-
-                # set button action and arg
-                self.current_button.set_arg(f)
+            # pin window
+            self.attributes("-topmost", True)
         else:
-            self.helpertxt_nobtn()
+            self.viewmode = 0
+            self.geometry(f"{XDIM}x{YDIM}")
+            # self.showEditMenu()
+            self.showSidebar()
 
-    # displays correct widget based on button action
+            # unpin window
+            self.attributes("-topmost", False)
+
+            # reset current button because editor isn't shown
+            if self.current_button is None: 
+                return
+            self.current_button.configure(border_color=BC_DEFAULT)
+            self.current_button = None
+
+    def selectfile(self, filetypes):
+        """
+        Opens file explorer window to select a file whose type is in filetypes.
+        If a file is chosen, current button's arg is set to the file path and button's text is the filename
+        """
+
+        if self.current_button is None:
+            self.helpertxt_nobtn()
+            return
+
+        self.helpertxt_clear() # in case there is a "NO FILE SELECTED" message
+
+        f = tk.filedialog.askopenfilename(
+            title='Choose song',
+            initialdir=self.initialdir,
+            filetypes=filetypes
+        )
+
+        if not f: 
+            return
+        
+        self.initialdir = os.path.dirname(f) # remember dir we used
+
+        # configure button text
+        self.current_button.set_text(os.path.basename(f).split('.')[0], default=True)
+        self.text_shared.set(self.current_button.cget("text")) # re-fill entry text in case it changed
+
+        # set button action and arg
+        self.current_button.set_arg(f)
+
     def set_actionbutton(self, action_text, changed):
+        """
+        displays action-specific widget in the "edit button" menu
+        "flex button" = class attribute that stores this widget
+        """
         self.text_shared.set(self.current_button.cget("text"))
 
         if action_text == 'No Action':
@@ -268,10 +348,12 @@ class App(ctk.CTk):
         else:
             raise ValueError(action_text)
 
-    # sets button action index
-    # sets default action text (if applicable)
-    # sets default action argument (if applicable)
     def set_action(self, action_text):
+        """
+        sets button action index
+        sets default action text (if applicable)
+        sets default action argument (if applicable)
+        """
         if self.current_button is None:
             self.action.set(ACTION_VALUES[0])
             self.helpertxt_nobtn()
@@ -312,28 +394,41 @@ class App(ctk.CTk):
         self.set_actionbutton(action_text, True)
         self.current_button.set_image()
 
-    # sets flex button to media chooser button
     def init_media_button(self):
-        # display media button on bottomframe
+        """
+        sets flex button to "media chooser" button
+        """
 
         self.destroy_flex()
 
+        filetypes = (
+            ('MP3 files', '*.mp3'),
+            ('All Files', '*.*')
+        )
+
         button_clr = ctk.CTkButton(self.bottomframe, 
-                                command=self.selectfile, 
+                                command=partial(self.selectfile, filetypes), 
                                 text='Choose File',
+                                fg_color=FC_DEFAULT,
+                                hover_color=hovercolor(FC_DEFAULT),
                                 font=self.STANDARDFONT)
-        button_clr.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
+        button_clr.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
 
         self.flex_button = button_clr
 
-    # sets flex button to view optionmenu
     def init_view_button(self):
+        """
+        sets flex button to drop down widget containing all views
+        """
+
         self.destroy_flex()
         views = [str(l) for l in self.views]
 
         button_view = ctk.CTkOptionMenu(self.bottomframe,
                                 command=self.arg_from_dropdown, 
                                 values=views,
+                                fg_color=FC_DEFAULT,
+                                button_hover_color=hovercolor(FC_DEFAULT),
                                 font=self.STANDARDFONT)
         
         button_view.set(str(self.views[self.current_button.arg]))
@@ -342,51 +437,76 @@ class App(ctk.CTk):
         if self.current_button is not self.buttons[self.back_button] or self.views[self.current_view].ismain():
             self.arg_from_dropdown(button_view.get())
 
-        button_view.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
+        button_view.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
 
         self.flex_button = button_view
 
     def init_URL_entry(self):
+        """
+        Sets flex button to text entry widget for URL
+        """
+
         self.destroy_flex()
 
         self.flex_text = tk.StringVar(self.bottomframe, value='')
         self.flex_text.trace('w',self.arg_from_text) # sets URL argument
 
         entry = ctk.CTkEntry(self.bottomframe, textvariable=self.flex_text)
-        entry.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
+        entry.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
         self.flex_button = entry
 
-    # set flex button to macro
     def init_macro_button(self):
+        """
+        Sets flex button to open MacroWindow instance
+        """
+
         self.destroy_flex()
 
         button = ctk.CTkButton(self.bottomframe, 
                                 command=self.macroconfig, 
                                 text='Set Macro',
+                                fg_color=FC_DEFAULT,
+                                hover_color=hovercolor(FC_DEFAULT),
                                 font=self.STANDARDFONT)
-        button.grid(row=2, column=1, padx=XPAD, pady=YPAD, sticky='w')
+        button.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
 
         self.flex_button = button
 
     def init_global_checkbox(self):
+        """
+        Global checkbox that toggles global state of a button in the main view
+        """
+
         if self.global_checkbox is not None:
             return
         self.global_checkbox = ctk.CTkCheckBox(master=self.bottomframe, text="Global", 
                                                onvalue=True, offvalue=False, 
                                                command = self.global_button)
-        self.global_checkbox.grid(row=4, column=0, padx=XPAD, pady=YPAD, sticky='nsw')
+        self.global_checkbox.grid(row=0, column=0, padx=XPAD, pady=YPAD, sticky='nsew')
 
     def destroy_flex(self):
+        """
+        destroys the flex button if it exists
+        """
+
         if self.flex_button is not None:
             self.flex_button.destroy()
             self.flex_button = None
 
     def destroy_global_checkbox(self):
+        """
+        destroys the global checkbox if it exists
+        """
+
         if self.global_checkbox is not None:
             self.global_checkbox.destroy()
             self.global_checkbox = None
 
     def global_button(self):
+        """
+        sets current button to be global if the checkbox is true
+        """
+
         if self.current_button is None:
             self.helpertxt_nobtn()
             return
@@ -396,21 +516,77 @@ class App(ctk.CTk):
         else:
             self.current_button._global = False
 
-    def new_view(self):
+    def new_view(self, ix=None, duplicate=False):
+        """
+        Creates new view.
+        If duplicate=False, then creates an empty view at ix (or at the end if ix is None)
+        If duplicate=True, the view at ix is duplicated and placed below it 
+        """
+
         # reset active button
         if self.current_button is not None:
-                self.current_button.configure(border_color=BC_DEFAULT)
-                self.current_button = None
+            self.current_button.configure(border_color=BC_DEFAULT)
+            self.current_button = None
 
         self.destroy_flex()
-        # self.views.append(View(f'View {len(self.views)+1}', self.buttons)) # copy current view
         
+        if ix is None:
+            ix=len(self.views)
+        
+        # create unique name
+        if duplicate:
+            newname = str(self.views[ix])
+        else:
+            newname = f'View {len(self.views)+1}'
+        usednames = [str(v) for v in self.views]
+        if newname in usednames:
+            i=1
+            while True:
+                if f"{newname} ({i})" not in usednames:
+                    newname = f"{newname} ({i})"
+                    break
+                i+=1
+
+        if duplicate:
+            newview = View(newname, self.views[ix].configs, False)
+            ix+=1 # goes below original
+        else:
+            newview = View(newname, self.empty_view.configs, False)
+
         # append empty view
-        self.views.append(View(f'View {len(self.views)+1}', self.empty_view.configs, False))
+        self.views.insert(ix, newview)
         self.refresh_sidebar()
 
-    # delete view that was right clicked
+    def insert_view(self):
+        """
+        inserts empty view below the one that was right-clicked
+        """
+        self.new_view(self.view_edit_ix+1, False)
+
+    def duplicate_view(self):
+        """
+        duplicates a view and inserts it below the original
+        """
+        self.new_view(self.view_edit_ix, True)
+
+    def move_view(self, up=True):
+        if up:
+            if self.view_edit_ix <=1:
+                return # keep main view at the top
+            offset = -1
+        else:
+            if self.view_edit_ix == len(self.views) - 1 or self.view_edit_ix == 0:
+                return
+            offset = 1
+        
+        genericSwap(self.views, self.view_edit_ix, self.view_edit_ix + offset)
+        self.refresh_sidebar()
+
     def delete_view(self):
+        """
+        Delete the view that was right clicked
+        """
+
         to_delete = self.view_edit_ix
         if self.views[to_delete].ismain():
             self.helper.configure(text='CANNOT DELETE MAIN VIEW')
@@ -420,8 +596,11 @@ class App(ctk.CTk):
             self.views.pop(to_delete)
             self.refresh_sidebar()
 
-    # init rename process
     def rename_view1(self):
+        """
+        Allows user to edit view name
+        """
+
         # get current name
         curname = str(self.views[self.view_edit_ix])
 
@@ -447,13 +626,24 @@ class App(ctk.CTk):
         # add entry widget to viewbuttons
         self.viewbuttons[self.view_edit_ix] = rename_entry
 
-    # complete rename process
     def rename_view2(self, event): 
+        """
+        Changes name of view after editing is complete
+        """
+
         name = self.viewbuttons[self.view_edit_ix].get()
-        self.views[self.view_edit_ix].rename(name)
+        if name in [str(v) for v in self.views]:
+            self.helper.configure(text='Name already in use')
+        else:
+            self.views[self.view_edit_ix].rename(name)
+        
         self.refresh_sidebar() # changes name and reverts entry widget to buttons
 
-    def name_to_enum(self, view_name):
+    def name_to_ix(self, view_name):
+        """
+        Converts view name to index in self.views
+        """
+
         view_enum = -1
         for i in range(len(self.views)):
             if str(self.views[i]) == view_name:
@@ -465,13 +655,20 @@ class App(ctk.CTk):
         
         return view_enum
 
-    # keyboard listener must use this callback 
     def open_view(self, view_enum):
+        """
+        Button Action: tells mainloop to run App.switch_view
+        keyboard listener must use this callback
+        """
+
         self.view_enum = view_enum
         self.after(0, self.switch_view)
 
-    # this is only called by mainloop
     def switch_view(self, view_enum=None):
+        """
+        Switches to new view
+        Must be called by mainloop
+        """
 
         if view_enum is None:
             if self.view_enum is not None:
@@ -507,8 +704,11 @@ class App(ctk.CTk):
 
         self.current_view = view_enum
 
-    # write view and image info to disk
     def save_data(self):
+        """
+        Write view and image data to disk
+        """
+
         # save current view:
         self.reset_bordercols()
         self.views[self.current_view].update(self.buttons)
@@ -518,9 +718,14 @@ class App(ctk.CTk):
         for view in self.views:
             data_views[str(view)] = view.configs
 
-        # load save file:
-        with open('savedata.json', 'r') as f:
-            savedata = json.load(f)
+        try:
+            # load save file:
+            with open('savedata.json', 'r') as f:
+                savedata = json.load(f)
+        except FileNotFoundError:
+            # create blank save file
+            savedata = {}
+            savedata['layouts'] = {}
 
         # overwrite views for layout we're using:
         savedata['layouts'][self.key_layout] = data_views
@@ -539,12 +744,18 @@ class App(ctk.CTk):
         print("saved data to savedata.json")
 
     def load_imgs(self, savedata):
+        """
+        loads images from disk
+        """
 
         data = savedata['images']
 
         self.images = [ctkimage(elem, ICON_SIZE) for elem in data]
 
     def load_views(self, savedata):
+        """
+        loads views from disk
+        """
 
         data = savedata['layouts'][self.key_layout]
         
@@ -558,13 +769,20 @@ class App(ctk.CTk):
         for view in self.views:
             self.used_colors |= view.colors()
 
-    # load global button status into main view
     def load_globals(self, savedata):
+        """
+        load global button status into main view
+        """
+
         global_buttons = savedata['globals'][self.key_layout]
         for i in range(len(self.buttons)):
             self.buttons[i]._global = global_buttons[i]
 
     def refresh_sidebar(self, init=False):
+        """
+        updates view data and current selection in left sidebar
+        """
+
         if not init:
             for button in self.viewbuttons:
                 button.destroy()
@@ -586,14 +804,26 @@ class App(ctk.CTk):
             self.viewbuttons.append(newbutton)
 
     def arg_from_text(self, *args):
+        """
+        Sets current button arg to whatever is in App.flex_text
+        """
+
         self.current_button.set_arg(self.flex_text.get())
 
-    # sets arg and defaulttext of current button for "Open View" action
     def arg_from_dropdown(self, view_name):
-        self.current_button.set_arg(self.name_to_enum(view_name))
+        """
+        sets arg and defaulttext of current button for "Open View" action (can be used for other dropdown widgets in the future)
+        """
+
+        self.current_button.set_arg(self.name_to_ix(view_name))
         self.current_button.set_text(view_name, default=True)
 
     def choosecolor(self):
+        """
+        Opens AskColor window, 
+        updates button color and self.used_colors if a color is returned
+        """
+
         if self.current_button is not None:
             # get current color to initialize window
             current_color = self.current_button.cget('fg_color')
@@ -610,6 +840,10 @@ class App(ctk.CTk):
             self.helpertxt_nobtn()
 
     def renamebutton(self, *args): 
+        """
+        renames current button to App.text_shared's value
+        """
+
         # args has metadata on the variable who called us    
         if self.current_button is not None:
             self.current_button.set_text(self.text_shared.get())
@@ -617,6 +851,10 @@ class App(ctk.CTk):
             self.helpertxt_nobtn()
 
     def hkconfig(self):
+        """
+        Opens HotkeyWindow instance and changes a button's hotkey once closed
+        """
+
         self.helpertxt_clear()
         if self.current_button is not None:
             win = HotkeyWindow(self.current_button.key, self.current_button.modifier, self.STANDARDFONT)
@@ -636,11 +874,16 @@ class App(ctk.CTk):
                 self.current_button.set_keys(oldkeys[0], oldkeys[1])
                 return
             
-            self.hotkeys = Keyboard.reset_hotkeys(self.buttons, self.hotkeys)
+            self.kill_hotkeys()
+            self.init_hotkeys()
         else:
             self.helpertxt_nobtn()
 
     def imgconfig(self):
+        """
+        opens ImageWindow instance and changes a button's image once closed
+        """
+
         self.helpertxt_clear()
         if self.current_button is not None:
             win = ImageWindow(self.images, self.STANDARDFONT)
@@ -665,6 +908,10 @@ class App(ctk.CTk):
             self.helpertxt_nobtn()
     
     def macroconfig(self):
+        """
+        Opens MacroWindow instance and changes button's macro once closed
+        """
+
         self.helpertxt_clear()
         if self.current_button is None:
             self.helpertxt_nobtn()
@@ -683,11 +930,19 @@ class App(ctk.CTk):
         self.current_button.set_arg(newmacro)
 
     def schedule_macro(self, keyset):
+        """
+        tells mainloop to run App.run_macro, then kills hotkeys
+        """
+
         self.to_press = keyset
         self.after(100, self.run_macro)
         self.kill_hotkeys()
 
     def run_macro(self):
+        """
+        runs the scheduled macro, then restarts hotkeys
+        """
+
         if self.to_press is None:
             return
         
@@ -700,21 +955,37 @@ class App(ctk.CTk):
         self.init_hotkeys() # restart hotkeys
 
     def reset_bordercols(self):
+        """
+        sets all actionbutton borders to default color
+        
+        could be optimized # TODO
+        """
+
         for button in self.buttons:
             button.configure(border_color=BC_DEFAULT)
 
     def entryconfig(self, event):
+        """
+        Unfocuses current button when we click on something else.
+        Bound to left click
+        """
+
         if isinstance(event.widget, ctk.windows.ctk_tk.CTk):
             if self.current_button is not None:
                 self.current_button.configure(border_color=BC_DEFAULT)
                 self.current_button = None
-            self.destroy_flex()
+            # self.destroy_flex()
+            self.hideEditMenu()
         try:
             event.widget.focus_set()
         except AttributeError: # from color picker
             pass
 
     def rclick_popup(self, event, view_ix):
+        """
+        does popup menu if view was right clicked in the sidebar
+        """
+
         self.view_edit_ix = view_ix
         self.rclickmenu.tk_popup(event.x_root, event.y_root)
         self.rclickmenu.grab_release()
@@ -734,6 +1005,12 @@ class App(ctk.CTk):
     ####################################
 
     def numpad_buttongrid(self, key_layout):
+        """
+        Loads key layout from file and creates button grid according to specifications
+
+        Runs once during init
+        """
+
         with open(key_layout, 'r') as f:
             button_mapping = json.load(f)
 
@@ -781,54 +1058,71 @@ class App(ctk.CTk):
         return buttons
 
     def button_settings(self):
+        """
+        Creates widgets for button settings
+
+        Runs once during init
+        """
 
         frame = self.bottomframe
 
         # helper text
         helper = ctk.CTkLabel(frame, text='', font=self.STANDARDFONT)
-        helper.grid(row=0, column=0, columnspan=2, padx=XPAD, pady=YPAD, sticky='new')
+        helper.grid(row=0, column=1, columnspan=2, padx=XPAD, pady=YPAD, sticky='nsew')
         
         # Button Text
         txtbox = ctk.CTkEntry(frame, 
                             placeholder_text='Button Text',
-                            width = XDIM/3,
                             textvariable=self.text_shared,
                             font=self.STANDARDFONT
                             )
-        txtbox.grid(row=1, column=0, padx=XPAD, pady=YPAD, sticky='w')
+        txtbox.grid(row=1, column=0, columnspan=2, padx=XPAD, pady=YPAD, sticky='nsew')
 
         # Button Action
         action = ctk.CTkOptionMenu(frame, 
                                 values = ACTION_VALUES,
                                 command=self.set_action,
+                                fg_color = FC_DEFAULT2,
+                                button_color = FC_DEFAULT2,
+                                button_hover_color = hovercolor(FC_DEFAULT2),
                                 font=self.STANDARDFONT)
-        action.grid(row=2, column=0, padx=XPAD, pady=YPAD, sticky='w')
+        action.grid(row=2, column=0, padx=XPAD, pady=YPAD, sticky='nsew')
 
         # Button Color
         button_clr = ctk.CTkButton(frame, 
                                 command=self.choosecolor, 
-                                text='Button Color',
+                                text='Color',
+                                fg_color = BC_DEFAULT,
+                                hover_color=hovercolor(BC_DEFAULT),
                                 font=self.STANDARDFONT)
-        button_clr.grid(row=1, column=1, padx=XPAD, pady=YPAD, sticky='w')
-
-        # Button HotKey:
-        button_hkey = ctk.CTkButton(frame, 
-                                    command=self.hkconfig, 
-                                    text='Configure Hotkey',
-                                    font=self.STANDARDFONT)
-        button_hkey.grid(row=3, column=1, columnspan=1, padx=XPAD, pady=YPAD, sticky='new')
+        button_clr.grid(row=3, column=0, padx=XPAD, pady=YPAD, sticky='nsew')
 
         # Button Image:
         button_img = ctk.CTkButton(frame, 
                                     command=self.imgconfig, 
                                     text='Image',
+                                    fg_color=BC_DEFAULT,
+                                    hover_color=hovercolor(BC_DEFAULT),
                                     font=self.STANDARDFONT)
-        button_img.grid(row=3, column=0, columnspan=1, padx=XPAD, pady=YPAD, sticky='new')
+        button_img.grid(row=3, column=1, columnspan=1, padx=XPAD, pady=YPAD, sticky='nsew')
+
+        # Button HotKey:
+        button_hkey = ctk.CTkButton(frame, 
+                                    command=self.hkconfig, 
+                                    text='Hotkey',
+                                    fg_color=BC_DEFAULT,
+                                    hover_color=hovercolor(BC_DEFAULT),
+                                    font=self.STANDARDFONT)
+        button_hkey.grid(row=3, column=2, padx=XPAD, pady=YPAD, sticky='nsew')
 
         return helper, txtbox, action, button_clr
 
-    def createViewMenu(self):
-        m = tk.Menu(self, 
+    def createEmptyMenu(self):
+        """
+        creates and returns tkinter menu with custom formatting
+        """
+
+        return tk.Menu(self, 
                     tearoff=0,
                     font=self.SMALLFONT,
                     fg='white',
@@ -837,7 +1131,34 @@ class App(ctk.CTk):
                     bd=1,
                     relief=None
                     )
+
+    def createMenuBar(self):
+        """
+        creates tkinter menu bar for app
+        """
+
+        mainmenu = self.createEmptyMenu()
+        
+        # filemenu # TODO
+        
+        viewmenu = self.createEmptyMenu()
+        mainmenu.add_cascade(label='View', menu=viewmenu)
+        viewmenu.add_command(label='Toggle View', command = self.changeViewMode)
+
+        return mainmenu
+
+    def createViewMenu(self):
+        """
+        creates tkinter menu for view sidebar
+        """
+
+        m = self.createEmptyMenu()
         m.add_command(label = 'Rename', command=self.rename_view1)
+        m.add_command(label = 'Insert', command=self.insert_view)
+        m.add_command(label = 'Duplicate', command=self.duplicate_view)
+        m.add_separator()
+        m.add_command(label = 'Move Up', command=partial(self.move_view, True))
+        m.add_command(label = 'Move Down', command=partial(self.move_view, False))
         m.add_separator()
         m.add_command(label = 'Delete', command=self.delete_view)
 

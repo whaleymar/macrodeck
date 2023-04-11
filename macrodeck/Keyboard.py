@@ -15,7 +15,7 @@ class keyboard(Controller):
 		for key in keys:
 			self.release(key)
 		
-		time.sleep(0.1)
+		time.sleep(0.1) # need some delay between each key press to prevent bugs. Not sure what the minimum is
 		return
 
 ##############################
@@ -25,14 +25,6 @@ class keyboard(Controller):
 def init_hotkeys(buttons):
 	hkmap = hotkeymap(buttons)
 	return GlobalHotKeys(hkmap)
-
-def reset_hotkeys(buttons, cur_thread=None):
-	if cur_thread is not None:
-		cur_thread.stop()
-
-	new_thread = init_hotkeys(buttons)
-	new_thread.start()
-	return new_thread
 
 def hotkeymap(buttons):
 	hotkeys = [(button.modifier, button.key, button.run_action) for button in buttons]
