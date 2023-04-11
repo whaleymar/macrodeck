@@ -1,4 +1,6 @@
 __pycache__
-testkeys.py
 test*.py
 savedata.json
+macrodeck.egg-info
+build
+dist

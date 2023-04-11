@@ -1,10 +1,11 @@
 import tkinter
-import customtkinter
+import customtkinter as ctk
 from PIL import Image, ImageTk
 import sys
 import os
 import math
 from functools import partial
+from macrodeck.gui.util import hovercolor
 
 if sys.platform.startswith("win"):
     import ctypes
@@ -12,15 +13,8 @@ if sys.platform.startswith("win"):
     
 HEIGHT = 450
 WIDTH = 500
-PATH = os.path.dirname(os.path.realpath(__file__))
 
-def hovercolor(hexstring):
-    return '#%02x%02x%02x' % tuple(max(col-30,0) for col in to_rgb(hexstring))
-
-def to_rgb(hexstring):
-    return tuple(int(hexstring[i:i+2],16) for i in range(1,6,2))
-
-class AskColor(customtkinter.CTkToplevel):
+class AskColor(ctk.CTkToplevel):
     
     def __init__(self, used_colors, color=(255, 255, 255)):
         
@@ -40,12 +34,11 @@ class AskColor(customtkinter.CTkToplevel):
         self.rgb_color = self.default_color[:]
         default_color_hex = '#%02x%02x%02x' % color
         
-        self.frame = customtkinter.CTkFrame(master=self)
+        self.frame = ctk.CTkFrame(master=self)
         self.frame.grid(row=0, column=0, padx=20, pady=20, sticky="")
 
-        # self.used_colors = list({"#1e1e1e", '#0494D9', '#595f5d'}) # temp, will be arg
-        self.used_colors = list(used_colors) # temp, will be arg
-        self.sframe = customtkinter.CTkScrollableFrame(master=self, width=150)
+        self.used_colors = list(used_colors) 
+        self.sframe = ctk.CTkScrollableFrame(master=self, width=150)
         self.sframe.grid(row=0, column=1, padx=20, pady=20, sticky='nse')
         self.used_buttons()
           
@@ -55,8 +48,8 @@ class AskColor(customtkinter.CTkToplevel):
         self.canvas.bind("<B1-Motion>", self.on_mouse_drag)
         self.canvas.bind("<Button-1>", self.on_mouse_click)
 
-        self.img1 = Image.open(os.path.join(PATH, 'assets\\color_wheel.png')).resize((200, 200), Image.Resampling.LANCZOS)
-        self.img2 = Image.open(os.path.join(PATH, 'assets\\target.png')).resize((20, 20), Image.Resampling.LANCZOS)
+        self.img1 = Image.open('assets/color_wheel.png').resize((200, 200), Image.Resampling.LANCZOS)
+        self.img2 = Image.open('assets/target.png').resize((20, 20), Image.Resampling.LANCZOS)
 
         self.wheel = ImageTk.PhotoImage(self.img1)
         self.target = ImageTk.PhotoImage(self.img2)
@@ -64,22 +57,22 @@ class AskColor(customtkinter.CTkToplevel):
         self.canvas.create_image(100,100, image=self.wheel)
         self.canvas.create_image(100, 100, image=self.target)
         
-        self.brightness_slider_value = customtkinter.IntVar()
+        self.brightness_slider_value = ctk.IntVar()
         self.brightness_slider_value.set(255)
         
-        self.slider = customtkinter.CTkSlider(master=self.frame, height=20, border_width=1,
+        self.slider = ctk.CTkSlider(master=self.frame, height=20, border_width=1,
                                               button_length=15, progress_color=default_color_hex, from_=0, to=255,
                                               variable=self.brightness_slider_value, number_of_steps=256, 
                                               command=lambda x:self.update_colors())
         self.slider.pack(fill="both", pady=(0,15), padx=20)
         
-        self.label = customtkinter.CTkLabel(master=self.frame, text_color="#ffffff", height=50, fg_color=default_color_hex,
+        self.label = ctk.CTkLabel(master=self.frame, text_color="#ffffff", height=50, fg_color=default_color_hex,
                                             corner_radius=24, text=default_color_hex,
-                                            font=customtkinter.CTkFont(family='Arial', weight='bold', size=14))
+                                            font=ctk.CTkFont(family='Arial', weight='bold', size=14))
         self.label.pack(fill="both", padx=10)
         
 
-        self.button = customtkinter.CTkButton(master=self.frame, text="OK", height=50, corner_radius=24,
+        self.button = ctk.CTkButton(master=self.frame, text="OK", height=50, corner_radius=24,
                                               command=self._ok_event)
         self.button.pack(fill="both", padx=10, pady=20)
         
@@ -104,7 +97,7 @@ class AskColor(customtkinter.CTkToplevel):
 
     def used_buttons(self):
         for i,color in enumerate(self.used_colors):
-            newbutton = customtkinter.CTkButton(master=self.sframe,
+            newbutton = ctk.CTkButton(master=self.sframe,
                                                 text=color,
                                                 fg_color=color,
                                                 hover_color=hovercolor(color),

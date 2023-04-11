@@ -1,89 +1,8 @@
-import vlc
-from mutagen.mp3 import MP3
 import random
-import time
 import os
 from os.path import join as pathjoin # aliasing so I don't confuse it with thread.join
 
-
-# VLCPlayer:
-# 	- class that maintains VLC Players and their states
-# if i was smart this would inherit from vlc.instance
-class VLCPlayer():
-	def __init__(self):
-		self.vlc_instance = vlc.Instance()
-		self.players = []
-		self.nplayers = 0
-		self.playlist_mode = False
-		self.playlist_paused = False
-
-	def __call__(self, path, new=False, wait=False):
-		if new or not self.nplayers:
-			player = self.new_player()
-			self.players.append(player)
-			self.nplayers+=1
-		else:
-			player = self.players[0]
-
-		player.set_media(self.vlc_instance.media_new(path))
-		print(f"Playing {os.path.basename(path)}")
-		player.play()
-		if wait:
-			time.sleep(self.mp3_length(path))
-
-	def new_player(self):
-		return self.vlc_instance.media_player_new()
-
-	def stop(self):
-		for player in self.players:
-			player.stop()
-
-	def reset(self):
-		self.stop()
-		self.players = []
-		self.nplayers = 0
-		self.playlist_mode = False
-		self.playlist_paused = False
-
-	def playing(self, player=None):
-		# checks if the given player is playing,
-		# if none given, checks the default player 
-
-		if self.nplayers==0:
-			return False
-		elif player is None: 
-			player = self.default_player()
-		return player.get_state() == vlc.State.Playing
-
-	def default_player(self):
-		# returns the default player if it exists, else None
-		if not self.nplayers:
-			return None
-		return self.players[0]
-
-	def toggle_pause(self):
-		# works only for default player rn
-
-		if self.nplayers:
-			player = self.default_player()
-			if self.playing(player):
-				player.pause()
-				if self.playlist_mode:
-					self.playlist_paused = True
-			else:
-				player.play()
-				if self.playlist_mode:
-					self.playlist_paused = False
-
-	def mp3_length(self, path):
-		# returns song length in seconds
-		return MP3(path).info.length
-
-#################################
-# Class to index music: #########
-#################################
-
-# Library: 
+# class to index music within a folder and its subfolders
 class Library():
 	def __init__(self, pdir):
 		self.lib = {}
@@ -148,9 +67,7 @@ class Library():
 			i+=1
 
 
-############################################
-# Helper Functions (for Library): ##########
-############################################
+# helper functions
 
 def index_library(path, lib=None, ignore=None):
 	# parse music library, create list of songs
