@@ -570,6 +570,9 @@ class App(ctk.CTk):
         self.new_view(self.view_edit_ix, True)
 
     def move_view(self, up=True):
+        """
+        Moves a view's location in the left sidebar up or down by one spot
+        """
         if up:
             if self.view_edit_ix <=1:
                 return # keep main view at the top
@@ -581,11 +584,21 @@ class App(ctk.CTk):
         
         genericSwap(self.views, self.view_edit_ix, self.view_edit_ix + offset)
 
+        # adjust args for any button whose action is "Open View"
+        changed = []
+        for i, view in enumerate(self.views):
+            if view.swap_views(self.view_edit_ix, self.view_edit_ix + offset):
+                changed.append(i)
+
         # need to switch views if current view moved
         if (self.view_edit_ix == self.current_view) or (self.view_edit_ix == self.current_view-1 and not up) or (self.view_edit_ix == self.current_view+1 and up):
             self.views[self.current_view].to_buttons(self.buttons, self.images, ACTION_ICONS)
             
             self.buttons[self.back_button].back_button() # always run this because main view cannot move
+        elif self.current_view in changed:
+            # update view if args in this one changed
+            print('current view changed')
+            self.views[self.current_view].to_buttons(self.buttons, self.images, ACTION_ICONS)
 
         self.refresh_sidebar()
 

@@ -157,7 +157,7 @@ class ActionButton(ctk.CTkButton):
                 self.master.master.helper.configure(text='Error: Button Not Configured')
     
     def dump(self):
-        return self.get_action(), self.get_arg(), self.get_keys(), self.get_text(), self.get_colors(), self.get_image()
+        return [self.get_action(), self.get_arg(), self.get_keys(), self.get_text(), self.get_colors(), self.get_image()]
 
     # override this to stop buttons from resizing
     def _create_grid(self):

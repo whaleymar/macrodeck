@@ -1,6 +1,71 @@
-from pynput.keyboard import GlobalHotKeys, Controller, KeyCode # threading/thread wrapper for hotkeys
+from pynput.keyboard import HotKey, Controller, KeyCode, Listener # threading/thread wrapper for hotkeys
 from pynput._util import win32_vks # gets keycodes
 import time
+
+
+# Create custom pynput class to avoid a bug with virtual key codes: ########		
+class MyHotKey(HotKey):
+	def press(self, key):
+		# remove scan code from input key because it's not input correctly in the hotkey
+		if hasattr(key, '_scan'):
+			setattr(key, '_scan', None)
+		if key in self._keys and key not in self._state:
+			self._state.add(key)
+			if self._state == self._keys:
+				self._on_activate()
+	def release(self, key):
+		"""Updates the hotkey state for a released key.
+
+		:param key: The key being released.
+		:type key: Key or KeyCode
+		"""
+		# remove scan code from input key because it's not input correctly in the hotkey
+		if hasattr(key, '_scan'):
+			setattr(key, '_scan', None)
+		if key in self._state:
+			self._state.remove(key)
+
+class MyGlobalHotKeys(Listener):
+    """A keyboard listener supporting a number of global hotkeys.
+
+    This is a convenience wrapper to simplify registering a number of global
+    hotkeys.
+
+    :param dict hotkeys: A mapping from hotkey description to hotkey action.
+        Keys are strings passed to :meth:`HotKey.parse`.
+
+    :raises ValueError: if any hotkey description is invalid
+    """
+    def __init__(self, hotkeys, *args, **kwargs):
+        self._hotkeys = [
+            MyHotKey(HotKey.parse(key), value)
+            for key, value in hotkeys.items()]
+        super(MyGlobalHotKeys, self).__init__(
+            on_press=self._on_press,
+            on_release=self._on_release,
+            *args,
+            **kwargs)
+
+    def _on_press(self, key):
+        """The press callback.
+
+        This is automatically registered upon creation.
+
+        :param key: The key provided by the base class.
+        """
+        for hotkey in self._hotkeys:
+            hotkey.press(self.canonical(key))
+
+    def _on_release(self, key):
+        """The release callback.
+
+        This is automatically registered upon creation.
+
+        :param key: The key provided by the base class.
+        """
+        for hotkey in self._hotkeys:
+            hotkey.release(self.canonical(key))
+
 
 ##############################
 # Macro Keyboard Class: ###########
@@ -24,7 +89,7 @@ class keyboard(Controller):
 
 def init_hotkeys(buttons):
 	hkmap = hotkeymap(buttons)
-	return GlobalHotKeys(hkmap)
+	return MyGlobalHotKeys(hkmap)
 
 def hotkeymap(buttons):
 	hotkeys = [(button.modifier, button.key, button.run_action) for button in buttons]

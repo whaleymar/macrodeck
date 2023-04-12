@@ -72,6 +72,22 @@ class View():
                     pass
             else:
                 self.configs[i] = button.dump()
+
+    def swap_views(self, i, j):
+        """
+        if any button's action is to Open View i, switches arg to j, and vice versa 
+        returns True if this changes the view
+        """
+        changed = False
+        for config in self.configs:
+            if config[0]==4: # action is "Open View"
+                if config[1]==i:
+                    config[1]=j
+                    changed = True
+                elif config[1]==j:
+                    config[1]=i
+                    changed = True
+        return changed
     
     def __str__(self):
         return self.__repr__()
