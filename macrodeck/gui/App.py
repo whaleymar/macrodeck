@@ -580,6 +580,13 @@ class App(ctk.CTk):
             offset = 1
         
         genericSwap(self.views, self.view_edit_ix, self.view_edit_ix + offset)
+
+        # need to switch views if current view moved
+        if (self.view_edit_ix == self.current_view) or (self.view_edit_ix == self.current_view-1 and not up) or (self.view_edit_ix == self.current_view+1 and up):
+            self.views[self.current_view].to_buttons(self.buttons, self.images, ACTION_ICONS)
+            
+            self.buttons[self.back_button].back_button() # always run this because main view cannot move
+
         self.refresh_sidebar()
 
     def delete_view(self):
@@ -592,7 +599,7 @@ class App(ctk.CTk):
             self.helper.configure(text='CANNOT DELETE MAIN VIEW')
         else:
             if to_delete == self.current_view:
-                self.switch_view(to_delete-1)
+                self.switch_view(view_enum=to_delete-1)
             self.views.pop(to_delete)
             self.refresh_sidebar()
 
@@ -664,7 +671,7 @@ class App(ctk.CTk):
         self.view_enum = view_enum
         self.after(0, self.switch_view)
 
-    def switch_view(self, view_enum=None):
+    def switch_view(self, view_enum=None, save=True):
         """
         Switches to new view
         Must be called by mainloop
@@ -685,7 +692,8 @@ class App(ctk.CTk):
         if view_enum == self.current_view: return
 
         # save current view:
-        self.views[self.current_view].update(self.buttons)
+        if save:
+            self.views[self.current_view].update(self.buttons)
 
         # on the sidebar, highlight new view button and unhighlight old one:
         self.viewbuttons[view_enum].configure(fg_color=('gray70', 'gray30'))
@@ -793,7 +801,7 @@ class App(ctk.CTk):
                                       text=str(view), fg_color=fg_color, 
                                       font=self.STANDARDFONT, hover_color=('gray70', 'gray30'),
                                       anchor='w', 
-                                      command=partial(self.switch_view,i)
+                                      command=partial(self.switch_view,view_enum=i)
                                       )
             newbutton.grid(row=i+1, column=0, sticky='ew') # +1 for new view button
 
