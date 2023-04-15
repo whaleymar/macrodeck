@@ -1,6 +1,5 @@
 import macrodeck.Keyboard as Keyboard
 import macrodeck.KeyCategories as KeyCategories
-from macrodeck.VLCPlayer import VLCPlayer
 from macrodeck.gui.MacroWindow import MacroWindow
 from macrodeck.gui.style import FC_DEFAULT, XPAD, YPAD, ICON_SIZE, ICON_SIZE_WIDE
 from macrodeck.gui.util import hovercolor, ctkimage
@@ -13,25 +12,27 @@ FLEX_WIDGET_ROW = 2
 FLEX_WIDGET_COL = 1
 FLEX_WIDGET_COLSPAN = 2
 
-player = VLCPlayer() # not sure how to avoid this global while having it shared between instances of different classes
-
 class Action(): # lawsuit?
-    def __init__(self, name, default_arg, icon, default_text=None, requires_arg=False):
+    def __init__(self, name, default_arg, icon, default_text=None, requires_arg=False, inactive=False):
         self.name = name
         self.default_arg = default_arg
         self.default_text = default_text
         self.icon = icon
         self.requires_arg = requires_arg
+        self._inactive = inactive # if true, this action does nothing and will make the button grayed-out
         self.enum = None
 
-    def display_widget(self, app):
-        self._widget(app)
+    def display_widget(self, app, changed):
+        self._widget(app, changed)
 
-    def _widget(self, app):
+    def _widget(self, app, changed):
         app.destroy_flex()
 
     def set_enum(self, ix):
         self.enum = ix
+
+    def inactive(self):
+        return self._inactive
 
     def set_action(self, button):
         """
@@ -50,8 +51,7 @@ class Action(): # lawsuit?
 
 class NoAction(Action):
     def __init__(self):
-        super().__init__("No Action", None, None)
-        self.player = player
+        super().__init__("No Action", None, None, inactive=True)
 
     def __call__(self, app):
         pass
@@ -59,9 +59,8 @@ class NoAction(Action):
 class PlayMedia(Action):
     def __init__(self):
         super().__init__("Play Media", None, ctkimage('assets/action_audio.png', ICON_SIZE_WIDE), requires_arg=True)
-        self.player = player
 
-    def _widget(self, app):
+    def _widget(self, app, changed):
         """
         sets flex button to "media chooser" button
         """
@@ -84,29 +83,27 @@ class PlayMedia(Action):
         app.flex_button = button
 
     def __call__(self, path, app):
-        self.player(path)
+        app.player(path)
 
 class PauseMedia(Action):
     def __init__(self):
         super().__init__("Pause Media", None, ctkimage('assets/action_pause.png', ICON_SIZE), default_text="Pause Media")
-        self.player = player
 
     def __call__(self, app):
-        self.player.toggle_pause()
+        app.player.toggle_pause()
 
 class StopMedia(Action):
     def __init__(self):
         super().__init__("Stop Media", None, ctkimage('assets/action_mute.png', ICON_SIZE), default_text="Stop Media")
-        self.player = player
     
     def __call__(self, app):
-        self.player.reset()
+        app.player.reset()
 
 class OpenView(Action):
     def __init__(self):
-        super().__init__("Open View", None, ctkimage('assets/action_openview.png', ICON_SIZE), requires_arg=True)
+        super().__init__("Open View", 0, ctkimage('assets/action_openview.png', ICON_SIZE), requires_arg=True)
 
-    def _widget(self, app):
+    def _widget(self, app, changed):
         """
         sets flex button to drop down widget containing all views
         """
@@ -145,7 +142,7 @@ class Macro(Action):
         super().__init__("Run Macro", None, ctkimage('assets/action_macro.png', ICON_SIZE), requires_arg=True)
         self.keyboard = Keyboard.keyboard()
 
-    def _widget(self, app):
+    def _widget(self, app, changed):
         """
         sets flex button to "macro config" button
         """
@@ -216,7 +213,7 @@ class Web(Action):
     def __init__(self):
         super().__init__("Open Web Page", "", ctkimage('assets/action_web.png', ICON_SIZE), requires_arg=True)
 
-    def _widget(self, app):
+    def _widget(self, app, changed):
         """
         Sets flex button to text entry widget for URL
         """
@@ -229,6 +226,10 @@ class Web(Action):
         entry = ctk.CTkEntry(app.bottomframe, textvariable=app.flex_text)
         entry.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
         app.flex_button = entry
+
+        # set url in text entry box
+        if not changed:
+            app.flex_text.set(app.current_button.arg)
 
     def __call__(self, url, app):
         webbrowser.open(url)

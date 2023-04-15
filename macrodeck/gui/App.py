@@ -11,6 +11,7 @@ from macrodeck.gui.ImageWindow import ImageWindow
 from macrodeck.gui.style import BC_ACTIVE, BC_DEFAULT, FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE, ICON_SIZE_WIDE, XPAD, YPAD
 from functools import partial
 import json
+from macrodeck.VLCPlayer import VLCPlayer
 
 ####################################
 # WINDOW APPEARANCE
@@ -52,6 +53,9 @@ class App(ctk.CTk):
 
         self.STANDARDFONT = ctk.CTkFont(family='Arial', weight='bold', size=14) # default size is 13
         self.SMALLFONT = ctk.CTkFont(family='Arial', size=14) # default size is 13
+
+        # init media player
+        self.player = VLCPlayer()
 
         # make all widgets focus-able so I can click out of entry box:
         # also make buttons un-focusable by clicking outside of a widget
@@ -159,13 +163,6 @@ class App(ctk.CTk):
                 self.load_globals(savedata)
             except KeyError:
                 pass
-    
-    def _callbacks(self):
-        """
-        returns list of action functions
-        """
-
-        return ACTIONS
     
     def init_hotkeys(self):
         """
@@ -294,15 +291,11 @@ class App(ctk.CTk):
     def set_actionbutton(self, action_text, changed):
         """
         displays action-specific widget in the "edit button" menu
-        "flex button" = class attribute that stores this widget
+        "flex button" = class attribute that points to this widget
         """
         self.text_shared.set(self.current_button.cget("text"))
 
-        NAME_TO_ACTION[action_text].display_widget(self)
-        
-        # set url in text entry box
-        if not changed and action_text == 'Open Web Page': # TODO class method
-            self.flex_text.set(self.current_button.arg)
+        NAME_TO_ACTION[action_text].display_widget(self, changed)
 
     def set_action(self, action_text):
         """
@@ -315,8 +308,8 @@ class App(ctk.CTk):
             self.helpertxt_nobtn()
             return
             
-        # check if we are mapping a real action # TODO class method
-        if action_text == 'No Action':
+        # check if this is a real action
+        if NAME_TO_ACTION[action_text].inactive():
             self.current_button.deactivate() # sets arg ix to 0 & changes appearance
         else:
             self.current_button.activate()
@@ -879,7 +872,7 @@ class App(ctk.CTk):
                                 anchor='n',
                                 compound='bottom'
                                 )
-            button.register_actions(self._callbacks(), ACTION_ICONS)
+
             button.set_keys('' if button_mapping[key]['modifier'] is None else button_mapping[key]['modifier'],
                             key)
             button._text_label.configure(wraplength=WRAPLEN*xadjustment)
@@ -1006,14 +999,3 @@ class App(ctk.CTk):
         m.add_command(label = 'Delete', command=self.delete_view)
 
         return m
-
-if __name__=='__main__':
-    layout = 'layouts/numpad_tall.json'
-    # layout = 'layouts/numpad.json'
-    app = App(layout)
-    ACTION_CALLS = app._callbacks()
-
-    # initialize macros
-    app.init_hotkeys()
-
-    app.mainloop()

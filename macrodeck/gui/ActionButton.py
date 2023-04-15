@@ -17,14 +17,6 @@ class ActionButton(ctk.CTkButton):
         self._lock = False
         self._global = False
 
-        
-        self.ACTION_ICONS = None
-        self.ACTION_CALLS = None
-
-    def register_actions(self, calls, icons):
-        self.ACTION_ICONS = icons
-        self.ACTION_CALLS = calls
-
     def activate(self):
         # only set default color if we're coming from deactivation
         if self.cget('fg_color')==FC_EMPTY:
@@ -139,7 +131,7 @@ class ActionButton(ctk.CTkButton):
         self.img_ix = ix
         
         if ix is None:
-            self.configure(image=self.ACTION_ICONS[self.action_enum])
+            self.configure(image=ACTIONS[self.action_enum].icon)
         else:
             self.configure(image=images[ix])
         self._draw()

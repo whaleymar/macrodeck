@@ -1,9 +1,7 @@
 from macrodeck import ActionClasses as act
 
-# [do_nothing, self.player.__call__, self.player.reset, self.player.toggle_pause, self.open_view, None, web.open]
-
 ACTIONS = [
-    act.NoAction(),
+    act.NoAction(), # this should always be index 0
     act.PlayMedia(),
     act.StopMedia(),
     act.PauseMedia(),
