@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from macrodeck.gui.style import FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE
 from macrodeck.gui.util import hovercolor, ctkimage
+from macrodeck.Actions import ACTIONS
 
 BACK_ICON = ctkimage('assets/action_back.png', size=ICON_SIZE)
 
@@ -148,13 +149,10 @@ class ActionButton(ctk.CTkButton):
 
     def run_action(self):
         if self.action_enum is None: return
-        if self.arg is not None:
-            self.ACTION_CALLS[self.action_enum](self.arg)
+        if ACTIONS[self.action_enum].requires_arg:
+            ACTIONS[self.action_enum](self.arg, self.master.master)
         else:
-            try:
-                self.ACTION_CALLS[self.action_enum]()
-            except TypeError:
-                self.master.master.helper.configure(text='Error: Button Not Configured')
+            ACTIONS[self.action_enum](self.master.master)
     
     def dump(self):
         return [self.get_action(), self.get_arg(), self.get_keys(), self.get_text(), self.get_colors(), self.get_image()]

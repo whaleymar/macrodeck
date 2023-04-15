@@ -76,7 +76,7 @@ class View():
     def swap_views(self, i, j):
         """
         if any button's action is to Open View i, switches arg to j, and vice versa 
-        returns True if this changes the view
+        returns True if this changes anything
         """
         changed = False
         for config in self.configs:
@@ -86,6 +86,20 @@ class View():
                     changed = True
                 elif config[1]==j:
                     config[1]=i
+                    changed = True
+        return changed
+    
+    def shift_views(self, start, up=True):
+        """
+        if any button's action is to Open View i, where i>=start, arg is incremented if up else decremented
+        returns True if this changes anything
+        """
+        changed = False
+        delta = 1 if up else -1
+        for config in self.configs:
+            if config[0]==4: # action is "Open View"
+                if config[1]>=start:
+                    config[1]=config[1]+delta
                     changed = True
         return changed
     

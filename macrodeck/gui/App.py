@@ -2,19 +2,15 @@ import tkinter as tk
 import customtkinter as ctk
 from macrodeck.gui.util import hovercolor, to_rgb, ctkimage, genericSwap
 import os
-import macrodeck.VLCPlayer as VLCPlayer
 import macrodeck.Keyboard as Keyboard
-import macrodeck.KeyCategories as KeyCategories
-from macrodeck.gui.ActionButton import ActionButton
+from macrodeck.gui.ActionButton import ActionButton, ACTIONS
 from macrodeck.gui.ButtonView import View, ViewButton
 from macrodeck.gui.ColorPicker import AskColor # from https://github.com/Akascape/CTkColorPicker
 from macrodeck.gui.HotkeyWindow import HotkeyWindow
 from macrodeck.gui.ImageWindow import ImageWindow
-from macrodeck.gui.MacroWindow import MacroWindow
-from macrodeck.gui.style import BC_ACTIVE, BC_DEFAULT, FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE, ICON_SIZE_WIDE
+from macrodeck.gui.style import BC_ACTIVE, BC_DEFAULT, FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE, ICON_SIZE_WIDE, XPAD, YPAD
 from functools import partial
 import json
-import webbrowser as web
 
 ####################################
 # WINDOW APPEARANCE
@@ -23,21 +19,12 @@ ctk.set_appearance_mode("System")  # Modes: system (default), light, dark
 ctk.set_default_color_theme("dark-blue")  # Themes: blue (default), dark-blue, green
 
 ####################################
-# HELPERS
-####################################
-
-def do_nothing():
-    pass
-
-####################################
 # CONSTANTS
 ####################################
 
 # geo
 XDIM = 800
 YDIM = 800 # 700 good for normal numpad
-XPAD = 5
-YPAD = 5
 
 BUTTON_SIZES = {
     'regular':(1,1),
@@ -45,13 +32,8 @@ BUTTON_SIZES = {
     'wide':(1,2)
 }
 
-DEFAULT_MODIFIER = KeyCategories.MODIFIERKEYSHOTKEY[3]
-
-ACTION_VALUES = ['No Action', 'Play Media', 'Stop Media', 'Pause Media', 'Open View', 'Perform Macro', 'Open Web Page']
-ACTION_ARGS = [None, None, None, None, 0, None, ""] # default action args
-ACTION_ICONS = [None, ctkimage('assets/action_audio.png', ICON_SIZE_WIDE), ctkimage('assets/action_mute.png', ICON_SIZE),
-                ctkimage('assets/action_pause.png', ICON_SIZE),ctkimage('assets/action_openview.png', ICON_SIZE),
-                ctkimage('assets/action_macro.png', ICON_SIZE), ctkimage('assets/action_web.png', ICON_SIZE)]
+ACTION_ICONS = [action.icon for action in ACTIONS]
+NAME_TO_ACTION = {action.name: action for action in ACTIONS}
 
 HC_EMPTY = hovercolor(FC_EMPTY)
 HC_DEFAULT = hovercolor(FC_DEFAULT)
@@ -70,12 +52,6 @@ class App(ctk.CTk):
 
         self.STANDARDFONT = ctk.CTkFont(family='Arial', weight='bold', size=14) # default size is 13
         self.SMALLFONT = ctk.CTkFont(family='Arial', size=14) # default size is 13
-
-        # init VLC player
-        self.player = VLCPlayer.VLCPlayer()
-
-        # init macro keyboard
-        self.keyboard = Keyboard.keyboard()
 
         # make all widgets focus-able so I can click out of entry box:
         # also make buttons un-focusable by clicking outside of a widget
@@ -150,12 +126,12 @@ class App(ctk.CTk):
         # IMAGES
         ####################################
         if savedata is None:
-            self.images = [icon for icon in ACTION_ICONS if icon is not None]
+            self.images = [action.icon for action in ACTIONS if action.icon is not None]
         else:
             try:
                 self.load_imgs(savedata)
             except KeyError:
-                self.images = [icon for icon in ACTION_ICONS if icon is not None]
+                self.images = [action.icon for action in ACTIONS if action.icon is not None]
 
         ####################################
         # VIEWS
@@ -189,7 +165,7 @@ class App(ctk.CTk):
         returns list of action functions
         """
 
-        return [do_nothing, self.player.__call__, self.player.reset, self.player.toggle_pause, self.open_view, self.schedule_macro, web.open]
+        return ACTIONS
     
     def init_hotkeys(self):
         """
@@ -230,7 +206,7 @@ class App(ctk.CTk):
 
         # set current button details in editor:
         self.text_shared.set(self.current_button.cget("text"))
-        b_action = ACTION_VALUES[self.current_button.action_enum]
+        b_action = ACTIONS[self.current_button.action_enum].name
         self.action.set(b_action)
         self.set_actionbutton(b_action, False)
         self.showEditMenu()
@@ -322,31 +298,11 @@ class App(ctk.CTk):
         """
         self.text_shared.set(self.current_button.cget("text"))
 
-        if action_text == 'No Action':
-            self.destroy_flex()
+        NAME_TO_ACTION[action_text].display_widget(self)
         
-        elif action_text == 'Play Media':
-            self.init_media_button()
-
-        elif action_text == 'Stop Media':
-            self.destroy_flex()
-
-        elif action_text == 'Pause Media':
-            self.destroy_flex()
-
-        elif action_text == 'Open View':
-            self.init_view_button()
-
-        elif action_text == 'Perform Macro':
-            self.init_macro_button()
-
-        elif action_text == 'Open Web Page':
-            self.init_URL_entry()
-            if not changed:
-                self.flex_text.set(self.current_button.arg)
-
-        else:
-            raise ValueError(action_text)
+        # set url in text entry box
+        if not changed and action_text == 'Open Web Page': # TODO class method
+            self.flex_text.set(self.current_button.arg)
 
     def set_action(self, action_text):
         """
@@ -355,122 +311,20 @@ class App(ctk.CTk):
         sets default action argument (if applicable)
         """
         if self.current_button is None:
-            self.action.set(ACTION_VALUES[0])
+            self.action.set(ACTIONS[0].name)
             self.helpertxt_nobtn()
             return
             
-        # check if we are mapping a real action
+        # check if we are mapping a real action # TODO class method
         if action_text == 'No Action':
             self.current_button.deactivate() # sets arg ix to 0 & changes appearance
         else:
             self.current_button.activate()
 
-            if action_text == 'Play Media':
-                self.current_button.set_action(1)
+            NAME_TO_ACTION[action_text].set_action(self.current_button)
 
-            elif action_text == 'Stop Media':
-                self.current_button.set_action(2)
-                self.current_button.set_text('Stop Audio', default=True)
-
-            elif action_text == 'Pause Media':
-                self.current_button.set_action(3)
-                self.current_button.set_text('Pause Audio', default=True)
-
-            elif action_text == 'Open View':
-                self.current_button.set_action(4)
-                self.current_button.set_text(str(self.views[0]), default=True)
-
-            elif action_text == 'Perform Macro':
-                self.current_button.set_action(5)
-                pass # not implemented
-
-            elif action_text == 'Open Web Page':
-                self.current_button.set_action(6)
-
-            else:
-                raise ValueError(action_text)
-
-        self.current_button.set_arg(ACTION_ARGS[self.current_button.get_action()])
         self.set_actionbutton(action_text, True)
         self.current_button.set_image()
-
-    def init_media_button(self):
-        """
-        sets flex button to "media chooser" button
-        """
-
-        self.destroy_flex()
-
-        filetypes = (
-            ('MP3 files', '*.mp3'),
-            ('All Files', '*.*')
-        )
-
-        button_clr = ctk.CTkButton(self.bottomframe, 
-                                command=partial(self.selectfile, filetypes), 
-                                text='Choose File',
-                                fg_color=FC_DEFAULT,
-                                hover_color=hovercolor(FC_DEFAULT),
-                                font=self.STANDARDFONT)
-        button_clr.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
-
-        self.flex_button = button_clr
-
-    def init_view_button(self):
-        """
-        sets flex button to drop down widget containing all views
-        """
-
-        self.destroy_flex()
-        views = [str(l) for l in self.views]
-
-        button_view = ctk.CTkOptionMenu(self.bottomframe,
-                                command=self.arg_from_dropdown, 
-                                values=views,
-                                fg_color=FC_DEFAULT,
-                                button_hover_color=hovercolor(FC_DEFAULT),
-                                font=self.STANDARDFONT)
-        
-        button_view.set(str(self.views[self.current_button.arg]))
-
-        # set button default text
-        if self.current_button is not self.buttons[self.back_button] or self.views[self.current_view].ismain():
-            self.arg_from_dropdown(button_view.get())
-
-        button_view.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
-
-        self.flex_button = button_view
-
-    def init_URL_entry(self):
-        """
-        Sets flex button to text entry widget for URL
-        """
-
-        self.destroy_flex()
-
-        self.flex_text = tk.StringVar(self.bottomframe, value='')
-        self.flex_text.trace('w',self.arg_from_text) # sets URL argument
-
-        entry = ctk.CTkEntry(self.bottomframe, textvariable=self.flex_text)
-        entry.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
-        self.flex_button = entry
-
-    def init_macro_button(self):
-        """
-        Sets flex button to open MacroWindow instance
-        """
-
-        self.destroy_flex()
-
-        button = ctk.CTkButton(self.bottomframe, 
-                                command=self.macroconfig, 
-                                text='Set Macro',
-                                fg_color=FC_DEFAULT,
-                                hover_color=hovercolor(FC_DEFAULT),
-                                font=self.STANDARDFONT)
-        button.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
-
-        self.flex_button = button
 
     def init_global_checkbox(self):
         """
@@ -528,11 +382,11 @@ class App(ctk.CTk):
             self.current_button.configure(border_color=BC_DEFAULT)
             self.current_button = None
 
-        self.destroy_flex()
+        self.destroy_flex() # TODO hide button editor
         
         if ix is None:
             ix=len(self.views)
-        
+
         # create unique name
         if duplicate:
             newname = str(self.views[ix])
@@ -547,14 +401,27 @@ class App(ctk.CTk):
                     break
                 i+=1
 
+        # create new View instance
         if duplicate:
             newview = View(newname, self.views[ix].configs, False)
             ix+=1 # goes below original
         else:
             newview = View(newname, self.empty_view.configs, False)
 
-        # append empty view
+        # insert view
         self.views.insert(ix, newview)
+
+        if ix < len(self.views) -1:
+            # adjust args for buttons whose action is "Open View"
+            changed = []
+            for i, view in enumerate(self.views):
+                if view.shift_views(ix):
+                    changed.append(i)
+
+            # refresh current view if affected
+            if self.current_view in changed:
+                self.views[self.current_view].to_buttons(self.buttons, self.images, ACTION_ICONS)
+
         self.refresh_sidebar()
 
     def insert_view(self):
@@ -590,14 +457,12 @@ class App(ctk.CTk):
             if view.swap_views(self.view_edit_ix, self.view_edit_ix + offset):
                 changed.append(i)
 
-        # need to switch views if current view moved
         if (self.view_edit_ix == self.current_view) or (self.view_edit_ix == self.current_view-1 and not up) or (self.view_edit_ix == self.current_view+1 and up):
+            # switch views if current view moved
             self.views[self.current_view].to_buttons(self.buttons, self.images, ACTION_ICONS)
-            
             self.buttons[self.back_button].back_button() # always run this because main view cannot move
         elif self.current_view in changed:
             # update view if args in this one changed
-            print('current view changed')
             self.views[self.current_view].to_buttons(self.buttons, self.images, ACTION_ICONS)
 
         self.refresh_sidebar()
@@ -610,11 +475,24 @@ class App(ctk.CTk):
         to_delete = self.view_edit_ix
         if self.views[to_delete].ismain():
             self.helper.configure(text='CANNOT DELETE MAIN VIEW')
-        else:
-            if to_delete == self.current_view:
-                self.switch_view(view_enum=to_delete-1)
-            self.views.pop(to_delete)
-            self.refresh_sidebar()
+            return
+        
+        if to_delete == self.current_view:
+            self.switch_view(view_enum=to_delete-1)
+        self.views.pop(to_delete)
+
+        if to_delete < len(self.views):
+            # adjust args for buttons whose action is "Open View"
+            changed = []
+            for i, view in enumerate(self.views):
+                if view.shift_views(to_delete, up=False):
+                    changed.append(i)
+
+            # refresh current view if affected
+            if self.current_view in changed:
+                self.views[self.current_view].to_buttons(self.buttons, self.images, ACTION_ICONS)
+
+        self.refresh_sidebar()
 
     def rename_view1(self):
         """
@@ -674,15 +552,6 @@ class App(ctk.CTk):
             raise ValueError(view_name)
         
         return view_enum
-
-    def open_view(self, view_enum):
-        """
-        Button Action: tells mainloop to run App.switch_view
-        keyboard listener must use this callback
-        """
-
-        self.view_enum = view_enum
-        self.after(0, self.switch_view)
 
     def switch_view(self, view_enum=None, save=True):
         """
@@ -927,53 +796,6 @@ class App(ctk.CTk):
 
         else:
             self.helpertxt_nobtn()
-    
-    def macroconfig(self):
-        """
-        Opens MacroWindow instance and changes button's macro once closed
-        """
-
-        self.helpertxt_clear()
-        if self.current_button is None:
-            self.helpertxt_nobtn()
-            return
-
-        win = MacroWindow(self.current_button.arg, self.STANDARDFONT)
-        newmacro = win.get()
-        if newmacro is None:
-            return
-        
-        # convert modifiers with map
-        for i in range(len(newmacro)):
-            if newmacro[i][0]=='':continue
-            newmacro[i] = ("+".join([KeyCategories.MODIFIER_TO_VK[key] for key in newmacro[i][0].split('+')]), newmacro[i][1])
-
-        self.current_button.set_arg(newmacro)
-
-    def schedule_macro(self, keyset):
-        """
-        tells mainloop to run App.run_macro, then kills hotkeys
-        """
-
-        self.to_press = keyset
-        self.after(100, self.run_macro)
-        self.kill_hotkeys()
-
-    def run_macro(self):
-        """
-        runs the scheduled macro, then restarts hotkeys
-        """
-
-        if self.to_press is None:
-            return
-        
-        for keys in self.to_press:
-            keys = [key for key in keys if len(key)>0] # remove empty modifier
-            keys = [Keyboard.to_pynput(key) for seq in keys for key in seq.split('+')] # split modifier and flatten
-            self.keyboard.press_keys(keys) # send keypress
-
-        self.to_press = None
-        self.init_hotkeys() # restart hotkeys
 
     def reset_bordercols(self):
         """
@@ -1101,7 +923,7 @@ class App(ctk.CTk):
 
         # Button Action
         action = ctk.CTkOptionMenu(frame, 
-                                values = ACTION_VALUES,
+                                values = [action.name for action in ACTIONS],
                                 command=self.set_action,
                                 fg_color = FC_DEFAULT2,
                                 button_color = FC_DEFAULT2,
