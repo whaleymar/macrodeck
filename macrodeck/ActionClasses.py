@@ -1,12 +1,22 @@
 import macrodeck.Keyboard as Keyboard
 import macrodeck.KeyCategories as KeyCategories
 from macrodeck.gui.MacroWindow import MacroWindow
-from macrodeck.gui.style import FC_DEFAULT, XPAD, YPAD, ICON_SIZE, ICON_SIZE_WIDE
+from macrodeck.gui.style import FC_DEFAULT, BC_DEFAULT, XPAD, YPAD, ICON_SIZE, ICON_SIZE_WIDE
 from macrodeck.gui.util import hovercolor, ctkimage
 import tkinter as tk
 import customtkinter as ctk
 from functools import partial
 import webbrowser
+import win32gui
+import win32process
+import wmi
+import os
+import time
+
+try:
+    from obswebsocket import requests
+except ModuleNotFoundError:
+    pass
 
 FLEX_WIDGET_ROW = 2
 FLEX_WIDGET_COL = 1
@@ -49,12 +59,14 @@ class Action(): # lawsuit?
     def __call__(self):
         pass
 
+
 class NoAction(Action):
     def __init__(self):
         super().__init__("No Action", None, None, inactive=True)
 
     def __call__(self, app):
         pass
+
 
 class PlayMedia(Action):
     def __init__(self):
@@ -85,6 +97,7 @@ class PlayMedia(Action):
     def __call__(self, path, app):
         app.player(path)
 
+
 class PauseMedia(Action):
     def __init__(self):
         super().__init__("Pause Media", None, ctkimage('assets/action_pause.png', ICON_SIZE), default_text="Pause Media")
@@ -92,12 +105,14 @@ class PauseMedia(Action):
     def __call__(self, app):
         app.player.toggle_pause()
 
+
 class StopMedia(Action):
     def __init__(self):
         super().__init__("Stop Media", None, ctkimage('assets/action_mute.png', ICON_SIZE), default_text="Stop Media")
     
     def __call__(self, app):
         app.player.reset()
+
 
 class OpenView(Action):
     def __init__(self):
@@ -112,7 +127,7 @@ class OpenView(Action):
         views = [str(l) for l in app.views]
 
         button_view = ctk.CTkOptionMenu(app.bottomframe,
-                                command=app.arg_from_dropdown, 
+                                command=app.view_from_dropdown, 
                                 values=views,
                                 fg_color=FC_DEFAULT,
                                 button_hover_color=hovercolor(FC_DEFAULT),
@@ -120,9 +135,9 @@ class OpenView(Action):
         
         button_view.set(str(app.views[app.current_button.arg]))
 
-        # set button default text
+        # set button default text (except for back buttons)
         if app.current_button is not app.buttons[app.back_button] or app.views[app.current_view].ismain():
-            app.arg_from_dropdown(button_view.get())
+            app.view_from_dropdown(button_view.get())
 
         button_view.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
 
@@ -136,6 +151,7 @@ class OpenView(Action):
 
         app.view_enum = view_enum
         app.after(0, app.switch_view)
+
 
 class Macro(Action):
     def __init__(self):
@@ -209,6 +225,7 @@ class Macro(Action):
 
         self.to_press = None
 
+
 class Web(Action):
     def __init__(self):
         super().__init__("Open Web Page", "", ctkimage('assets/action_web.png', ICON_SIZE), requires_arg=True)
@@ -233,3 +250,257 @@ class Web(Action):
 
     def __call__(self, url, app):
         webbrowser.open(url)
+
+class OBSScene(Action):
+    def __init__(self):
+        super().__init__("Open OBS Scene", None, None, requires_arg=True)
+
+    def _widget(self, app, changed):
+        """
+        sets flex button to drop down widget containing all OBS scenes
+        """
+        
+        app.destroy_flex()
+        # if app.obsws is None: # not working when auto-reconnect is enabled
+        try:
+            app.obsws.call(requests.GetSceneList())
+        except:
+            app.helper.configure(text='Could not connect to OBS web server')
+            return
+        
+        scenes = [scene['sceneName'] for scene in app.obsws.call(requests.GetSceneList()).getScenes()]
+
+        button = ctk.CTkOptionMenu(app.bottomframe,
+                                command=app.arg_from_dropdown, 
+                                values=scenes,
+                                fg_color=FC_DEFAULT,
+                                button_hover_color=hovercolor(FC_DEFAULT),
+                                font=app.STANDARDFONT)
+        
+        if app.current_button.arg is not None:
+            button.set(app.current_button.arg)
+
+        # set button default text
+        app.arg_from_dropdown(button.get())
+
+        button.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
+
+        app.flex_button = button
+
+    def __call__(self, arg, app):
+        # if app.obsws is None: # not working when auto-reconnect is enabled
+        try:
+            app.obsws.call(requests.GetSceneList())
+        except:
+            app.helper.configure(text='Could not connect to OBS web server')
+            return
+        
+        app.obsws.call(requests.SetCurrentProgramScene(sceneName=arg))
+
+class OBSMute(Action):
+    def __init__(self):
+        raise NotImplementedError
+        super().__init__("Mute OBS Source", None, None, requires_arg=True)
+
+    def _widget(self, app, changed):
+        """
+        sets flex button to drop down widget containing all OBS sources
+        """
+        
+        app.destroy_flex()
+        if app.obsws is None:
+            app.helper.configure(text='Could not connect to OBS web server')
+            return
+        
+        sourcelisttemp = app.obsws.call(requests.GetSourcesList())
+        sources = [source['sourceName'] for source in app.obsws.call(requests.GetSourcesList()).getSources()]
+
+        button = ctk.CTkOptionMenu(app.bottomframe,
+                                command=app.arg_from_dropdown, 
+                                values=sources,
+                                fg_color=FC_DEFAULT,
+                                button_hover_color=hovercolor(FC_DEFAULT),
+                                font=app.STANDARDFONT)
+        
+        if app.current_button.arg is not None:
+            button.set(app.current_button.arg)
+
+        # set button default text
+        app.arg_from_dropdown(button.get())
+
+        button.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
+
+        app.flex_button = button
+
+    def __call__(self, arg, app):
+        if app.obsws is None:
+            app.helper.configure(text='Could not connect to OBS web server')
+            return
+        
+        app.obsws.call(requests.GetMute(arg))
+        app.obsws.call(requests.SetMute(arg))
+
+
+class ManageWindow(Action):
+    def __init__(self):
+        super().__init__("Move/Open Application", None, None, requires_arg=True)
+        self.connection = wmi.WMI()
+        self.nameCache = {}
+
+    def _widget(self, app, changed):
+        """
+        sets flex button to drop down widget containing all window names
+
+        on selection: the current position of the window is saved
+        """
+        
+        app.destroy_flex()
+        
+        windows = self.getVisibleWindows()
+
+        names = self.getAppNames(windows)
+
+        # dropdown containing applications:
+        button = ctk.CTkOptionMenu(app.bottomframe,
+                                command=partial(self.saveConfig, app, windows), 
+                                values=names,
+                                fg_color=FC_DEFAULT,
+                                button_hover_color=hovercolor(FC_DEFAULT),
+                                dynamic_resizing=False,
+                                font=app.STANDARDFONT)
+        
+        if not changed and app.current_button.arg is not None:
+            hwnd = self.appToWindow(app.current_button.arg[0], app.current_button.arg[1])
+            if hwnd is not None:
+                button.set(win32gui.GetWindowText(hwnd))
+            else:
+                app.helper.configure(text=f"Could not find window: {os.path.basename(app.current_button.arg[0]) if app.current_button.arg[1] else app.current_button.arg[0]}")
+
+        # setting button args if we changed the action:
+        if changed:
+            self.saveConfig(app, windows, button.get())
+
+        # button to update coordinates of selected application:
+        updatebutton = ctk.CTkButton(app.bottomframe, 
+                                command=partial(self.saveConfig, app, windows), 
+                                text='Update',
+                                fg_color=BC_DEFAULT,
+                                hover_color=hovercolor(BC_DEFAULT),
+                                font=app.STANDARDFONT)
+
+        button.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = 1, padx=XPAD, pady=YPAD, sticky='nsew')
+        updatebutton.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL+1, columnspan = 1, padx=XPAD, pady=YPAD, sticky='nsew')
+
+        app.flex_button = button
+
+    def __call__(self, arg, app):        
+        app.after(0, self.moveWindow, arg)
+
+    def moveWindow(self, arg):
+        appname, isPath, coords = arg
+
+        hwnd = self.appToWindow(appname, isPath)
+        if hwnd is None:
+            shouldReturn = True
+            # attempt to open the application
+            if isPath:
+                os.startfile(appname) # doesn't work for apps from the windows app store? vscode python extension bug: anything opened by this line will be closed when the debugger terminates
+                time.sleep(1) # give time to open
+                
+                # re-calc hwnd
+                hwnd = self.appToWindow(appname, isPath)
+                if hwnd is not None:
+                    shouldReturn = False
+
+            if shouldReturn:
+                print(f"Could not find window: {os.path.basename(appname) if isPath else appname}")
+                return
+        
+        win32gui.MoveWindow(hwnd, *self.boxToParams(coords), True)
+
+    def appToWindow(self, appname, isPath):
+        for hwnd in self.getVisibleWindows():
+            if (isPath and self.getAppPath(hwnd)==appname) or (not isPath and win32gui.GetWindowText(hwnd)==appname):
+                return hwnd
+        return None
+
+    def getAppPath(self, hwnd):
+        """
+        returns window's executable path
+        """
+        if hwnd in self.nameCache.keys():
+            return self.nameCache[hwnd]
+        
+        try:
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            for p in self.connection.query('SELECT ExecutablePath FROM Win32_Process WHERE ProcessId = %s' % str(pid)):
+                exe = p.ExecutablePath
+                break
+        except:
+            result = None
+        else:
+            result = exe
+
+        self.nameCache[hwnd] = result
+        return result
+        
+    def boxToParams(self, coords):
+        left, top, right, bottom = coords
+        return left, top, right - left, bottom - top
+    
+    def getWindow(self, hwnd, result):
+        if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
+            result.append(hwnd)
+
+    def getVisibleWindows(self):
+        """
+        loop through all windows and store those that are visible and named
+        """
+        result = []
+        win32gui.EnumWindows(self.getWindow, result)
+        return result
+    
+    def processEXE(self, exeName):
+        if exeName is None:
+            exeName = "<No .exe found>"
+        else:
+            exeName = os.path.basename(exeName)
+
+        return exeName
+    
+    def getAppNames(self, windows):
+
+        result = []
+        for hwnd in windows:
+            exeName = self.processEXE(self.getAppPath(hwnd))
+            result.append(f"{exeName} | {win32gui.GetWindowText(hwnd)}")
+        return result
+    
+    def saveConfig(self, app, windows, winName=None):
+        """
+        given a window title, saves button arg as a tuple containing (appname, isPath, coords)
+        """
+        hwnd = None
+        if winName is not None:
+            # dropdown selection
+            for _hwnd in windows:
+                exeName = self.processEXE(self.getAppPath(_hwnd))
+                if f"{exeName} | {win32gui.GetWindowText(_hwnd)}" == winName:
+                    hwnd = _hwnd
+                    break
+        else:
+            # "update" button pressed; use current button args
+            hwnd = self.appToWindow(app.current_button.arg[0], app.current_button.arg[1])
+
+        if hwnd is None:
+            raise ValueError
+        
+        coords = win32gui.GetWindowRect(hwnd)
+
+        # appname: exe path if exists, else window title 
+        isPath = True
+        appname = self.getAppPath(hwnd)
+        if appname is None:
+            appname = win32gui.GetWindowText(hwnd)
+            isPath = False
+        app.current_button.set_arg((appname, isPath, coords))

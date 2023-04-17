@@ -1,7 +1,8 @@
 import customtkinter as ctk
 from macrodeck.gui.style import WRAPLEN
 
-# container for button grid parameters
+# container for button grid data
+# facilitates writing/reading from save data
 # does not store most (c)tkinter attrs because those stay fixed
 class View():
     def __init__(self, name, data, got_buttons=True, ismain=False):

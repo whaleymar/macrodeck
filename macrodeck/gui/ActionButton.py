@@ -140,9 +140,13 @@ class ActionButton(ctk.CTkButton):
         return self.img_ix
 
     def run_action(self):
-        if self.action_enum is None: return
+        # check that we have an action and, if needed, an arg
+        if self.action_enum is None or (ACTIONS[self.action_enum].requires_arg and self.arg is None):
+            self.master.master.helpertxt_noconfig()
+            return
+
         if ACTIONS[self.action_enum].requires_arg:
-            ACTIONS[self.action_enum](self.arg, self.master.master)
+            ACTIONS[self.action_enum](self.arg, self.master.master) # self.master.master is fragile if I add more frames. Should use direct pointer to main window TODO
         else:
             ACTIONS[self.action_enum](self.master.master)
     

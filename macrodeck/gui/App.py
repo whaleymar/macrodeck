@@ -12,6 +12,13 @@ from macrodeck.gui.style import BC_ACTIVE, BC_DEFAULT, FC_DEFAULT, FC_DEFAULT2, 
 from functools import partial
 import json
 from macrodeck.VLCPlayer import VLCPlayer
+import threading
+
+try:
+    from obswebsocket import obsws
+    OBS_CONNECTED = True
+except ModuleNotFoundError:
+    OBS_CONNECTED = False
 
 ####################################
 # WINDOW APPEARANCE
@@ -56,6 +63,12 @@ class App(ctk.CTk):
 
         # init media player
         self.player = VLCPlayer()
+
+        # init OBS web socket
+        # using a thread so startup isn't slow
+        t = threading.Thread(target = self.init_obs_server, daemon=True, name="OBS Web Server")
+        t.start()
+
 
         # make all widgets focus-able so I can click out of entry box:
         # also make buttons un-focusable by clicking outside of a widget
@@ -179,6 +192,37 @@ class App(ctk.CTk):
 
         self.hotkeys.stop()
         self.hotkeys = None
+
+    def init_obs_server(self):
+        """
+        init obs web server (if possible)
+        """
+
+        # TODO helpertxt instead of print
+
+        print("Attempting to connect to OBS web server")
+
+        if not OBS_CONNECTED:
+            self.obsws = None
+            return
+        
+        try:
+            with open('obsserverlogin.txt', 'r') as f:
+                host, port, password = [elem.strip() for elem in f.readlines()]
+        except FileNotFoundError:
+            print("File not found: obsserverlogin.txt")
+            self.obsws = None
+            return
+
+        try:
+            self.obsws = obsws(host, int(port), password, authreconnect=30)
+            self.obsws.connect()
+        except: # throwing multiple exceptions if OBS is closed, can't seem to catch them all :(
+            print("Couldn't connect to OBS web server")
+            self.obsws = None
+            return
+        
+        print("Connected to OBS web server")
     
     def button_callback(self, button_ix):
         """
@@ -693,13 +737,21 @@ class App(ctk.CTk):
 
         self.current_button.set_arg(self.flex_text.get())
 
-    def arg_from_dropdown(self, view_name):
+    def view_from_dropdown(self, view_name):
         """
-        sets arg and defaulttext of current button for "Open View" action (can be used for other dropdown widgets in the future)
+        sets arg and defaulttext of current button for "Open View" action
         """
 
         self.current_button.set_arg(self.name_to_ix(view_name))
         self.current_button.set_text(view_name, default=True)
+
+    def arg_from_dropdown(self, arg):
+        """
+        sets arg and defaulttext of current button to the dropdown selection
+        """
+
+        self.current_button.set_arg(arg)
+        self.current_button.set_text(arg, default=True)
 
     def choosecolor(self):
         """
@@ -829,11 +881,16 @@ class App(ctk.CTk):
     def helpertxt_clear(self):
         self.helper.configure(text='')
 
+    def helpertxt_noconfig(self):
+        self.helper.configure(text='BUTTON NOT CONFIGURED')
+
     def helpertxt_nobtn(self):
         self.helper.configure(text='NO BUTTON SELECTED')
 
     def _on_closing(self):
         self.save_data()
+        if self.obsws is not None:
+            self.obsws.disconnect()
         self.destroy()
 
     ####################################
@@ -921,6 +978,7 @@ class App(ctk.CTk):
                                 fg_color = FC_DEFAULT2,
                                 button_color = FC_DEFAULT2,
                                 button_hover_color = hovercolor(FC_DEFAULT2),
+                                dynamic_resizing=False,
                                 font=self.STANDARDFONT)
         action.grid(row=2, column=0, padx=XPAD, pady=YPAD, sticky='nsew')
 
