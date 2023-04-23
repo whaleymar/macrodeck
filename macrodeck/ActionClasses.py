@@ -33,10 +33,19 @@ class Action(): # lawsuit?
         self.enum = None
 
     def display_widget(self, app, changed):
-        self._widget(app, changed)
-
-    def _widget(self, app, changed):
         app.destroy_flex()
+        widget1, widget2 = self._widget(app, app.bottomframe, changed)
+
+        colspan = FLEX_WIDGET_COLSPAN if widget2 is None else FLEX_WIDGET_COLSPAN//2
+        if widget1 is not None:
+            widget1.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = colspan, padx=XPAD, pady=YPAD, sticky='nsew')
+            app.flex_button = widget1
+        if widget2 is not None:
+            widget2.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL+1, columnspan = colspan, padx=XPAD, pady=YPAD, sticky='nsew')
+            app.flex_button2 = widget2
+
+    def _widget(self, app, frame, changed):
+        return (None, None)
 
     def set_enum(self, ix):
         self.enum = ix
@@ -72,27 +81,24 @@ class PlayMedia(Action):
     def __init__(self):
         super().__init__("Play Media", None, ctkimage('assets/action_audio.png', ICON_SIZE_WIDE), requires_arg=True)
 
-    def _widget(self, app, changed):
+    def _widget(self, app, frame, changed):
         """
         sets flex button to "media chooser" button
         """
-
-        app.destroy_flex()
 
         filetypes = (
             ('MP3 files', '*.mp3'),
             ('All Files', '*.*')
         )
 
-        button = ctk.CTkButton(app.bottomframe, 
+        button = ctk.CTkButton(frame, 
                                 command=partial(app.selectfile, filetypes), 
                                 text='Choose File',
                                 fg_color=FC_DEFAULT,
                                 hover_color=hovercolor(FC_DEFAULT),
                                 font=app.STANDARDFONT)
-        button.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
-
-        app.flex_button = button
+        
+        return button, None
 
     def __call__(self, path, app):
         app.player(path)
@@ -118,15 +124,14 @@ class OpenView(Action):
     def __init__(self):
         super().__init__("Open View", 0, ctkimage('assets/action_openview.png', ICON_SIZE), requires_arg=True)
 
-    def _widget(self, app, changed):
+    def _widget(self, app, frame, changed):
         """
         sets flex button to drop down widget containing all views
         """
 
-        app.destroy_flex()
         views = [str(l) for l in app.views]
 
-        button_view = ctk.CTkOptionMenu(app.bottomframe,
+        button_view = ctk.CTkOptionMenu(frame,
                                 command=app.view_from_dropdown, 
                                 values=views,
                                 fg_color=FC_DEFAULT,
@@ -136,12 +141,10 @@ class OpenView(Action):
         button_view.set(str(app.views[app.current_button.arg]))
 
         # set button default text (except for back buttons)
-        if app.current_button is not app.buttons[app.back_button] or app.views[app.current_view].ismain():
+        if changed and (app.current_button is not app.buttons[app.back_button] or app.views[app.current_view].ismain()):
             app.view_from_dropdown(button_view.get())
 
-        button_view.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
-
-        app.flex_button = button_view
+        return button_view, None
 
     def __call__(self, view_enum, app):
         """
@@ -158,25 +161,29 @@ class Macro(Action):
         super().__init__("Run Macro", None, ctkimage('assets/action_macro.png', ICON_SIZE), requires_arg=True)
         self.keyboard = Keyboard.keyboard()
 
-    def _widget(self, app, changed):
+    def _widget(self, app, frame, changed):
         """
         sets flex button to "macro config" button
         """
 
-        app.destroy_flex()
-
-        button = ctk.CTkButton(app.bottomframe, 
+        button = ctk.CTkButton(frame, 
                                 command=partial(self.macroconfig, app),
                                 text='Set Macro',
                                 fg_color=FC_DEFAULT,
                                 hover_color=hovercolor(FC_DEFAULT),
                                 font=app.STANDARDFONT)
-        button.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
-
-        app.flex_button = button
+        
+        return button, None
 
     def __call__(self, keyset, app):
-        self.schedule_macro(keyset, app)
+        """
+        tells mainloop to run App.run_macro, then kills hotkeys
+        """
+
+        self.to_press = keyset
+        app.after(100, self.run_macro)
+        app.kill_hotkeys()
+        app.after_idle(app.init_hotkeys)
 
     def macroconfig(self, app):
         """
@@ -200,16 +207,6 @@ class Macro(Action):
 
         app.current_button.set_arg(newmacro)
 
-    def schedule_macro(self, keyset, app):
-        """
-        tells mainloop to run App.run_macro, then kills hotkeys
-        """
-
-        self.to_press = keyset
-        app.after(100, self.run_macro)
-        app.kill_hotkeys()
-        app.after_idle(app.init_hotkeys)
-
     def run_macro(self):
         """
         runs the scheduled macro, then restarts hotkeys
@@ -218,6 +215,7 @@ class Macro(Action):
         if self.to_press is None:
             return
         
+        time.sleep(0.1) # give time for hotkey to be depressed # TODO better way to do this by checking pressed keys?
         for keys in self.to_press:
             keys = [key for key in keys if len(key)>0] # remove empty modifier
             keys = [Keyboard.to_pynput(key) for seq in keys for key in seq.split('+')] # split modifier and flatten
@@ -230,62 +228,58 @@ class Web(Action):
     def __init__(self):
         super().__init__("Open Web Page", "", ctkimage('assets/action_web.png', ICON_SIZE), requires_arg=True)
 
-    def _widget(self, app, changed):
+    def _widget(self, app, frame, changed):
         """
         Sets flex button to text entry widget for URL
         """
 
-        app.destroy_flex()
-
-        app.flex_text = tk.StringVar(app.bottomframe, value='')
+        app.flex_text = tk.StringVar(frame, value='')
         app.flex_text.trace('w',app.arg_from_text) # sets URL argument
 
         entry = ctk.CTkEntry(app.bottomframe, textvariable=app.flex_text)
-        entry.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
-        app.flex_button = entry
 
         # set url in text entry box
         if not changed:
-            app.flex_text.set(app.current_button.arg)
+            app.flex_text.set(app.current_button.arg) # TODO might need to bring this into display_widget() ?
+
+        return entry, None
 
     def __call__(self, url, app):
         webbrowser.open(url)
+
 
 class OBSScene(Action):
     def __init__(self):
         super().__init__("Open OBS Scene", None, None, requires_arg=True)
 
-    def _widget(self, app, changed):
+    def _widget(self, app, frame, changed):
         """
         sets flex button to drop down widget containing all OBS scenes
         """
         
-        app.destroy_flex()
         # if app.obsws is None: # not working when auto-reconnect is enabled
         try:
             app.obsws.call(requests.GetSceneList())
         except:
             app.helper.configure(text='Could not connect to OBS web server')
-            return
+            return None, None
         
         scenes = [scene['sceneName'] for scene in app.obsws.call(requests.GetSceneList()).getScenes()]
 
-        button = ctk.CTkOptionMenu(app.bottomframe,
+        button = ctk.CTkOptionMenu(frame,
                                 command=app.arg_from_dropdown, 
                                 values=scenes,
                                 fg_color=FC_DEFAULT,
                                 button_hover_color=hovercolor(FC_DEFAULT),
                                 font=app.STANDARDFONT)
         
-        if app.current_button.arg is not None:
+        if not changed:
             button.set(app.current_button.arg)
+        else:
+            # set button default text
+            app.arg_from_dropdown(button.get())
 
-        # set button default text
-        app.arg_from_dropdown(button.get())
-
-        button.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
-
-        app.flex_button = button
+        return button, None
 
     def __call__(self, arg, app):
         # if app.obsws is None: # not working when auto-reconnect is enabled
@@ -297,40 +291,38 @@ class OBSScene(Action):
         
         app.obsws.call(requests.SetCurrentProgramScene(sceneName=arg))
 
+
 class OBSMute(Action):
     def __init__(self):
         raise NotImplementedError
         super().__init__("Mute OBS Source", None, None, requires_arg=True)
 
-    def _widget(self, app, changed):
+    def _widget(self, app, frame, changed):
         """
         sets flex button to drop down widget containing all OBS sources
         """
         
-        app.destroy_flex()
         if app.obsws is None:
             app.helper.configure(text='Could not connect to OBS web server')
-            return
+            return None, None
         
         sourcelisttemp = app.obsws.call(requests.GetSourcesList())
         sources = [source['sourceName'] for source in app.obsws.call(requests.GetSourcesList()).getSources()]
 
-        button = ctk.CTkOptionMenu(app.bottomframe,
+        button = ctk.CTkOptionMenu(frame,
                                 command=app.arg_from_dropdown, 
                                 values=sources,
                                 fg_color=FC_DEFAULT,
                                 button_hover_color=hovercolor(FC_DEFAULT),
                                 font=app.STANDARDFONT)
         
-        if app.current_button.arg is not None:
+        if not changed:
             button.set(app.current_button.arg)
+        else:
+            # set button default text
+            app.arg_from_dropdown(button.get())
 
-        # set button default text
-        app.arg_from_dropdown(button.get())
-
-        button.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = FLEX_WIDGET_COLSPAN, padx=XPAD, pady=YPAD, sticky='nsew')
-
-        app.flex_button = button
+        return button, None
 
     def __call__(self, arg, app):
         if app.obsws is None:
@@ -347,21 +339,19 @@ class ManageWindow(Action):
         self.connection = wmi.WMI()
         self.nameCache = {}
 
-    def _widget(self, app, changed):
+    def _widget(self, app, frame, changed):
         """
         sets flex button to drop down widget containing all window names
 
         on selection: the current position of the window is saved
         """
         
-        app.destroy_flex()
-        
         windows = self.getVisibleWindows()
 
         names = self.getAppNames(windows)
 
         # dropdown containing applications:
-        button = ctk.CTkOptionMenu(app.bottomframe,
+        button = ctk.CTkOptionMenu(frame,
                                 command=partial(self.saveConfig, app, windows), 
                                 values=names,
                                 fg_color=FC_DEFAULT,
@@ -383,15 +373,12 @@ class ManageWindow(Action):
         # button to update coordinates of selected application:
         updatebutton = ctk.CTkButton(app.bottomframe, 
                                 command=partial(self.saveConfig, app, windows), 
-                                text='Update',
+                                text='Update Position',
                                 fg_color=BC_DEFAULT,
                                 hover_color=hovercolor(BC_DEFAULT),
                                 font=app.STANDARDFONT)
 
-        button.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = 1, padx=XPAD, pady=YPAD, sticky='nsew')
-        updatebutton.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL+1, columnspan = 1, padx=XPAD, pady=YPAD, sticky='nsew')
-
-        app.flex_button = button
+        return button, updatebutton
 
     def __call__(self, arg, app):        
         app.after(0, self.moveWindow, arg)

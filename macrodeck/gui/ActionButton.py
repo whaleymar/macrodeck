@@ -16,6 +16,8 @@ class ActionButton(ctk.CTkButton):
         self.action_enum = 0
         self._lock = False
         self._global = False
+        self.modifier = None
+        self.key = None
 
     def activate(self):
         # only set default color if we're coming from deactivation
@@ -78,6 +80,8 @@ class ActionButton(ctk.CTkButton):
         self.key = key
 
     def get_keys(self):
+        if self.modifier is None and self.key is None:
+            return None
         return self.modifier[:-1], self.key # [:-1] since we add '+' to modifier
 
     def set_text(self, text, default=False):

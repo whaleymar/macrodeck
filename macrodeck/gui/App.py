@@ -3,11 +3,13 @@ import customtkinter as ctk
 from macrodeck.gui.util import hovercolor, to_rgb, ctkimage, genericSwap
 import os
 import macrodeck.Keyboard as Keyboard
-from macrodeck.gui.ActionButton import ActionButton, ACTIONS
+from macrodeck import Actions
+from macrodeck.gui.ActionButton import ActionButton
 from macrodeck.gui.ButtonView import View, ViewButton
 from macrodeck.gui.ColorPicker import AskColor # from https://github.com/Akascape/CTkColorPicker
 from macrodeck.gui.HotkeyWindow import HotkeyWindow
 from macrodeck.gui.ImageWindow import ImageWindow
+from macrodeck.gui.MultiAction import MultiAction
 from macrodeck.gui.style import BC_ACTIVE, BC_DEFAULT, FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE, ICON_SIZE_WIDE, XPAD, YPAD
 from functools import partial
 import json
@@ -40,15 +42,22 @@ BUTTON_SIZES = {
     'wide':(1,2)
 }
 
-ACTION_ICONS = [action.icon for action in ACTIONS]
-NAME_TO_ACTION = {action.name: action for action in ACTIONS}
-
 HC_EMPTY = hovercolor(FC_EMPTY)
 HC_DEFAULT = hovercolor(FC_DEFAULT)
 
 FLEX_WIDGET_ROW = 2
 FLEX_WIDGET_COL = 1
 FLEX_WIDGET_COLSPAN = 2
+
+####################################
+# ACTIONS
+####################################
+
+ACTIONS = Actions.ACTIONS
+Actions.add_action(MultiAction())
+
+ACTION_ICONS = [action.icon for action in ACTIONS]
+NAME_TO_ACTION = {action.name: action for action in ACTIONS}
 
 class App(ctk.CTk):
     def __init__(self, key_layout):
@@ -106,12 +115,18 @@ class App(ctk.CTk):
                                                 anchor='w', command=self.new_view)
         self.newviewbutton.grid(row=0, column=0, sticky='ew')
 
-        # TOP (button grid)
+        # TOP 
+        # button grid
         buttonGridXDim = XDIM - XPAD*2
         buttonGridYDim = YDIM - YPAD*2
         self.topframe = ctk.CTkFrame(self, width = buttonGridXDim, height = buttonGridYDim)
         self.topframe.grid(row=0, column=1, sticky='n')
-
+        
+        # multi action settings
+        self.MAframe = ctk.CTkFrame(self, width = buttonGridXDim, height = buttonGridYDim)
+        self.MAframe.grid(row=0, column=1, sticky='n')
+        self.MAframe.grid_remove()
+        self.MAframe_active = False
 
         ####################################
         # MISC
@@ -121,16 +136,18 @@ class App(ctk.CTk):
         self.text_shared.trace('w',self.renamebutton) # callback when text is edited
 
         self.current_button = None
+        self.parent_button = None # owner of a multi action
 
         self.initialdir = '/' # where we start when opening a file
         self.flex_button = None
+        self.flex_button2 = None
         self.flex_text = None
         self.global_checkbox = None
         self.to_press = None
 
         self.key_layout = os.path.basename(key_layout)[:-5] # name of layout file without extension
         self.buttons = self.numpad_buttongrid(key_layout)
-        self.helper, self.txtbox, self.action, self.button_clr = self.button_settings()
+        self.helper, self.txtbox, self.action, self.button_clr, self.button_hkey = self.button_settings()
 
         # load save:
         try:
@@ -264,11 +281,72 @@ class App(ctk.CTk):
         else:
             self.destroy_global_checkbox()
 
+    def button_callback_MA(self):
+        """
+        runs when we click a multi action button (within self.MAframe)
+
+        shows button editor for the sub-action button
+        """
+        
+        self.text_shared.set(self.current_button.cget("text"))
+        b_action = ACTIONS[self.current_button.action_enum].name
+        self.action.set(b_action)
+        self.set_actionbutton(b_action, False)
+        self.showEditMenu()
+
+        self.destroy_global_checkbox()
+
     def hideEditMenu(self):
+        """
+        hides bottom frame (contains button edit menu)
+        """
         self.bottomframe.grid_remove()
 
     def showEditMenu(self):
+        """
+        shows bottom frame (contains button edit menu)
+        """
         self.bottomframe.grid()
+
+    def showButtons(self):
+        """
+        shows button frame & left sidebar 
+        removes multi-action frame
+        """
+        self.MAframe.grid_remove()
+        self.lframe.grid()
+        self.topframe.grid()
+        self.button_hkey.grid()
+        # self.button_clr.grid()
+
+        self.current_button = None
+        # get button index of parent button so we can call button_callback
+        button_ix = None
+        for i in range(len(self.buttons)):
+            if self.parent_button is self.buttons[i]:
+                button_ix = i
+                break
+
+        self.button_callback(button_ix)
+
+        self.parent_button = None
+        self.MAframe_active = False
+
+    def showActionMenu(self):
+        """
+        hides button frame & left sidebar
+        adds multi-action frame
+        """
+        self.topframe.grid_remove()
+        self.lframe.grid_remove()
+        self.button_hkey.grid_remove()
+        # self.button_clr.grid_remove()
+        self.MAframe.grid()
+        self.hideEditMenu()
+
+        self.parent_button = self.current_button
+        self.current_button = None
+        self.MAframe_active = True
 
     def hideSidebar(self):
         self.lframe.grid_remove()
@@ -351,17 +429,27 @@ class App(ctk.CTk):
             self.action.set(ACTIONS[0].name)
             self.helpertxt_nobtn()
             return
+        
+        action = NAME_TO_ACTION[action_text]
+
+        if self.MAframe_active and isinstance(action, MultiAction):
+            self.action.set(ACTIONS[0].name)
+            self.helper.configure(text="Nested Multi Actions Unavailable")
+            return
             
         # check if this is a real action
-        if NAME_TO_ACTION[action_text].inactive():
+        if action.inactive():
             self.current_button.deactivate() # sets arg ix to 0 & changes appearance
         else:
             self.current_button.activate()
 
-            NAME_TO_ACTION[action_text].set_action(self.current_button)
+            action.set_action(self.current_button)
 
         self.set_actionbutton(action_text, True)
         self.current_button.set_image()
+
+    def get_actions(self):
+        return ACTIONS
 
     def init_global_checkbox(self):
         """
@@ -383,6 +471,10 @@ class App(ctk.CTk):
         if self.flex_button is not None:
             self.flex_button.destroy()
             self.flex_button = None
+
+        if self.flex_button2 is not None:
+            self.flex_button2.destroy()
+            self.flex_button2 = None
 
     def destroy_global_checkbox(self):
         """
@@ -969,7 +1061,7 @@ class App(ctk.CTk):
                             textvariable=self.text_shared,
                             font=self.STANDARDFONT
                             )
-        txtbox.grid(row=1, column=0, columnspan=2, padx=XPAD, pady=YPAD, sticky='nsew')
+        txtbox.grid(row=1, column=0, columnspan=3, padx=XPAD, pady=YPAD, sticky='nsew')
 
         # Button Action
         action = ctk.CTkOptionMenu(frame, 
@@ -1009,7 +1101,7 @@ class App(ctk.CTk):
                                     font=self.STANDARDFONT)
         button_hkey.grid(row=3, column=2, padx=XPAD, pady=YPAD, sticky='nsew')
 
-        return helper, txtbox, action, button_clr
+        return helper, txtbox, action, button_clr, button_hkey
 
     def createEmptyMenu(self):
         """
