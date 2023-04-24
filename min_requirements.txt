@@ -1,0 +1,4 @@
+customtkinter
+pynput
+wmi
+screeninfo

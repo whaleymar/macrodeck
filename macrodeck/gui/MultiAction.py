@@ -14,7 +14,7 @@ class MultiAction(ActionClasses.Action):
         self.app = None # store pointer to use some app methods
         self.created_frames = False
         self.wraplength = 75
-        self.secs_between_actions = 0
+        self.secs_between_actions = 0.2
 
     def _widget(self, app, frame, changed):
         """
@@ -40,6 +40,9 @@ class MultiAction(ActionClasses.Action):
         if self.app is None:
             self.app = app
         app.after(100, self.run_actions, arg)
+
+    def unique_key(self) -> int:
+        return 11
 
     def run_actions(self, arg):
         actions = self.app.get_actions()

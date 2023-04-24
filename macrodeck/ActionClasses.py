@@ -14,12 +14,15 @@ import time
 
 try:
     from obswebsocket import requests
+    HAS_OBSWS=True
 except ModuleNotFoundError:
-    pass
+    HAS_OBSWS=False
 
 FLEX_WIDGET_ROW = 2
 FLEX_WIDGET_COL = 1
 FLEX_WIDGET_COLSPAN = 2
+
+_keyboard = Keyboard.keyboard()
 
 class Action(): # lawsuit?
     def __init__(self, name, default_arg, icon, default_text=None, requires_arg=False, inactive=False, calls_after=False):
@@ -68,6 +71,15 @@ class Action(): # lawsuit?
     def __call__(self):
         pass
 
+    # subclass must overwrite this
+    def unique_key(self) -> int:
+        """
+        returns int key unique to each Action class
+
+        used in save data to preserve action even if the name/order of actions changes
+        """
+        raise NotImplementedError
+
 
 class NoAction(Action):
     def __init__(self):
@@ -75,6 +87,9 @@ class NoAction(Action):
 
     def __call__(self, app):
         pass
+
+    def unique_key(self) -> int:
+        return 0
 
 
 class PlayMedia(Action):
@@ -103,6 +118,9 @@ class PlayMedia(Action):
     def __call__(self, path, app):
         app.player(path)
 
+    def unique_key(self) -> int:
+        return 1
+
 
 class PauseMedia(Action):
     def __init__(self):
@@ -111,6 +129,9 @@ class PauseMedia(Action):
     def __call__(self, app):
         app.player.toggle_pause()
 
+    def unique_key(self) -> int:
+        return 2
+
 
 class StopMedia(Action):
     def __init__(self):
@@ -118,6 +139,9 @@ class StopMedia(Action):
     
     def __call__(self, app):
         app.player.reset()
+
+    def unique_key(self) -> int:
+        return 3
 
 
 class OpenView(Action):
@@ -158,11 +182,14 @@ class OpenView(Action):
         else:
             app.after(0, app.switch_view)
 
+    def unique_key(self) -> int:
+        return 4
+
 
 class Macro(Action):
     def __init__(self):
         super().__init__("Run Macro", None, ctkimage('assets/action_macro.png', ICON_SIZE), requires_arg=True, calls_after=True)
-        self.keyboard = Keyboard.keyboard()
+        self.keyboard = _keyboard
 
     def _widget(self, app, frame, changed):
         """
@@ -232,6 +259,9 @@ class Macro(Action):
             app.kill_hotkeys()
             app.after_idle(app.init_hotkeys)
 
+    def unique_key(self) -> int:
+        return 5
+
     def macro_config(self, app, is_modifier, _key):
         """
         Updates button arg with new macro
@@ -247,7 +277,8 @@ class Macro(Action):
         if not (len(modifier)>0 or len(key)>0):
             return
         
-        modifier = "+".join([KeyCategories.MODIFIER_TO_VK[key] for key in modifier.split('+')])
+        if len(modifier)>0:
+            modifier = "+".join([KeyCategories.MODIFIER_TO_VK[_key] for _key in modifier.split('+')])
         
         app.current_button.set_arg((modifier, key))
 
@@ -279,7 +310,7 @@ class Web(Action):
         app.flex_text = tk.StringVar(frame, value='')
         app.flex_text.trace('w',app.arg_from_text) # sets URL argument
 
-        entry = ctk.CTkEntry(app.bottomframe, textvariable=app.flex_text)
+        entry = ctk.CTkEntry(frame, textvariable=app.flex_text)
 
         # set url in text entry box
         if not changed:
@@ -289,6 +320,9 @@ class Web(Action):
 
     def __call__(self, url, app):
         webbrowser.open(url)
+
+    def unique_key(self) -> int:
+        return 6
 
 
 class OBSScene(Action):
@@ -334,6 +368,9 @@ class OBSScene(Action):
         
         app.obsws.call(requests.SetCurrentProgramScene(sceneName=arg))
 
+    def unique_key(self) -> int:
+        return 7
+
 
 class OBSMute(Action):
     def __init__(self):
@@ -375,6 +412,9 @@ class OBSMute(Action):
         app.obsws.call(requests.GetMute(arg))
         app.obsws.call(requests.SetMute(arg))
 
+    def unique_key(self) -> int:
+        return 8
+
 
 class ManageWindow(Action):
     def __init__(self):
@@ -414,7 +454,7 @@ class ManageWindow(Action):
             self.saveConfig(app, windows, button.get())
 
         # button to update coordinates of selected application:
-        updatebutton = ctk.CTkButton(app.bottomframe, 
+        updatebutton = ctk.CTkButton(frame, 
                                 command=partial(self.saveConfig, app, windows), 
                                 text='Update Position',
                                 fg_color=BC_DEFAULT,
@@ -428,6 +468,9 @@ class ManageWindow(Action):
             self.moveWindow(arg)
         else:
             app.after(0, self.moveWindow, arg)
+
+    def unique_key(self) -> int:
+        return 9
 
     def moveWindow(self, arg):
         appname, isPath, coords = arg
@@ -450,6 +493,7 @@ class ManageWindow(Action):
                 return
         
         win32gui.MoveWindow(hwnd, *self.boxToParams(coords), True)
+        win32gui.SetForegroundWindow(hwnd)
 
     def appToWindow(self, appname, isPath):
         for hwnd in self.getVisibleWindows():
@@ -537,3 +581,59 @@ class ManageWindow(Action):
             appname = win32gui.GetWindowText(hwnd)
             isPath = False
         app.current_button.set_arg((appname, isPath, coords))
+
+
+class EnterText(Action):
+    def __init__(self):
+        super().__init__("Type Text", "", None, requires_arg=True)
+        self.keyboard = _keyboard
+
+    def _widget(self, app, frame, changed):
+        """
+        Sets flex button to text entry widget
+        """
+
+        app.flex_text = tk.StringVar(frame, value='')
+        app.flex_text.trace('w', app.arg_from_text)
+
+        entry = ctk.CTkEntry(frame, textvariable=app.flex_text)
+
+        # set text in text entry box
+        if not changed:
+            app.flex_text.set(app.current_button.arg)
+        
+        return entry, None
+    
+    def __call__(self, text, app):
+        self.keyboard.type(text)
+
+    def unique_key(self) -> int:
+        return 10
+    
+
+class MediaVolume(Action):
+    def __init__(self):
+        super().__init__("VLC Volume", None, None, requires_arg=True)
+
+    def _widget(self, app, frame, changed):
+        slider = ctk.CTkSlider(frame, from_=0, to=100, command=partial(self.update_volume_setting, app))
+        
+        if not changed:
+            slider.set(app.current_button.get_arg())
+        else:
+            default_volume = 50
+            slider.set(default_volume)
+            app.current_button.set_arg(default_volume)
+
+
+        return slider, None
+
+    def __call__(self, volume, app):
+        app.player.set_volume(volume)
+
+    def unique_key(self) -> int:
+        return 12
+    
+    def update_volume_setting(self, app, value):
+        volume = int(value)
+        app.current_button.set_arg(volume)

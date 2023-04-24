@@ -1,5 +1,9 @@
-import vlc
 import os 
+try:
+	import vlc
+	HAS_VLC = True
+except ModuleNotFoundError:
+	HAS_VLC = False
 
 # class that maintains VLC Players and tracks their states
 # if i was smart this would inherit from vlc.instance
@@ -56,13 +60,24 @@ class VLCPlayer():
 	def toggle_pause(self):
 		# works only for default player 
 
-		if self.nplayers:
-			player = self.default_player()
-			if self.playing(player):
-				player.pause()
-				if self.playlist_mode:
-					self.playlist_paused = True
-			else:
-				player.play()
-				if self.playlist_mode:
-					self.playlist_paused = False
+		if not self.nplayers:
+			return
+		
+		player = self.default_player()
+		if self.playing(player):
+			player.pause()
+			if self.playlist_mode:
+				self.playlist_paused = True
+		else:
+			player.play()
+			if self.playlist_mode:
+				self.playlist_paused = False
+
+	def set_volume(self, value):
+		# works only for default player
+
+		if not self.nplayers:
+			return
+
+		player = self.default_player()
+		player.audio_set_volume(value)

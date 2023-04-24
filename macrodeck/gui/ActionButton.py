@@ -1,7 +1,8 @@
 import customtkinter as ctk
 from macrodeck.gui.style import FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE
 from macrodeck.gui.util import hovercolor, ctkimage
-from macrodeck.Actions import ACTIONS
+from macrodeck.Actions import ACTIONS, HAS_OBSWS
+import macrodeck.ActionClasses as act
 
 BACK_ICON = ctkimage('assets/action_back.png', size=ICON_SIZE)
 
@@ -48,7 +49,17 @@ class ActionButton(ctk.CTkButton):
     def back_button(self):
         self.unlock()
         self.deactivate()
-        self.set_action(4) # open view
+
+        # set action to Openview
+        openview_enum=None
+        for action in ACTIONS:
+            if isinstance(action, act.OpenView):
+                openview_enum = action.enum
+                break
+        if openview_enum is None:
+            raise ValueError("'OpenView' action not found")
+        self.set_action(openview_enum)
+        
         self.set_arg(0) # point to main view
         self.configure(image=BACK_ICON)
         self._draw()
@@ -155,6 +166,12 @@ class ActionButton(ctk.CTkButton):
             ACTIONS[self.action_enum](self.master.master)
     
     def dump(self):
+        """
+        returns (mutable) button metadata (used for saving)
+
+        self.get_action() should always be first
+        """
+
         return [self.get_action(), self.get_arg(), self.get_keys(), self.get_text(), self.get_colors(), self.get_image()]
 
     # override this to stop buttons from resizing

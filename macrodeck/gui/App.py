@@ -1,10 +1,10 @@
 import tkinter as tk
 import customtkinter as ctk
-from macrodeck.gui.util import hovercolor, to_rgb, ctkimage, genericSwap
+from macrodeck.gui.util import hovercolor, to_rgb, ctkimage, genericSwap, scaling_factor
 import os
 import macrodeck.Keyboard as Keyboard
 from macrodeck import Actions
-from macrodeck.gui.ActionButton import ActionButton
+from macrodeck.gui.ActionButton import ActionButton, HAS_OBSWS
 from macrodeck.gui.ButtonView import View, ViewButton
 from macrodeck.gui.ColorPicker import AskColor # from https://github.com/Akascape/CTkColorPicker
 from macrodeck.gui.HotkeyWindow import HotkeyWindow
@@ -13,7 +13,7 @@ from macrodeck.gui.MultiAction import MultiAction
 from macrodeck.gui.style import BC_ACTIVE, BC_DEFAULT, FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE, ICON_SIZE_WIDE, XPAD, YPAD
 from functools import partial
 import json
-from macrodeck.VLCPlayer import VLCPlayer
+from macrodeck.VLCPlayer import VLCPlayer, HAS_VLC
 import threading
 
 try:
@@ -25,8 +25,11 @@ except ModuleNotFoundError:
 ####################################
 # WINDOW APPEARANCE
 ####################################
+scale = scaling_factor()
 ctk.set_appearance_mode("System")  # Modes: system (default), light, dark
 ctk.set_default_color_theme("dark-blue")  # Themes: blue (default), dark-blue, green
+ctk.set_window_scaling(scale)
+ctk.set_widget_scaling(scale)
 
 ####################################
 # CONSTANTS
@@ -59,6 +62,11 @@ Actions.add_action(MultiAction())
 ACTION_ICONS = [action.icon for action in ACTIONS]
 NAME_TO_ACTION = {action.name: action for action in ACTIONS}
 
+# register unique action keys
+assert len(ACTIONS) == len(set([action.unique_key() for action in ACTIONS]))
+ENUM_TO_UID = {action.enum: action.unique_key() for action in ACTIONS}
+UID_TO_ENUM = {v:k for k,v in ENUM_TO_UID.items()}
+
 class App(ctk.CTk):
     def __init__(self, key_layout):
         super().__init__()
@@ -71,13 +79,18 @@ class App(ctk.CTk):
         self.SMALLFONT = ctk.CTkFont(family='Arial', size=14) # default size is 13
 
         # init media player
-        self.player = VLCPlayer()
+        if HAS_VLC:
+            self.player = VLCPlayer()
+        else:
+            self.player = None
 
         # init OBS web socket
         # using a thread so startup isn't slow
-        t = threading.Thread(target = self.init_obs_server, daemon=True, name="OBS Web Server")
-        t.start()
-
+        if HAS_OBSWS:
+            t = threading.Thread(target = self.init_obs_server, daemon=True, name="OBS Web Server")
+            t.start()
+        else:
+            self.obsws = None
 
         # make all widgets focus-able so I can click out of entry box:
         # also make buttons un-focusable by clicking outside of a widget
@@ -724,7 +737,7 @@ class App(ctk.CTk):
 
     def save_data(self):
         """
-        Write view and image data to disk
+        Write views, images, and globals to disk
         """
 
         # save current view:
@@ -734,7 +747,11 @@ class App(ctk.CTk):
         # gather layout data
         data_views = {}
         for view in self.views:
-            data_views[str(view)] = view.configs
+            # convert from action enum to uid
+            configs = view.configs
+            for config in configs:
+                config[0] = ENUM_TO_UID[config[0]]
+            data_views[str(view)] = configs
 
         try:
             # load save file:
@@ -778,8 +795,11 @@ class App(ctk.CTk):
         data = savedata['layouts'][self.key_layout]
         
         self.views = []
-        for k,v in data.items():
-            self.views.append(View(k, v, False))
+        for name,configs in data.items():
+            # convert from Action uid to Enum
+            for config in configs:
+                config[0] = UID_TO_ENUM[config[0]]
+            self.views.append(View(name, configs, False))
         
         self.views[0].to_buttons(self.buttons, self.images, ACTION_ICONS, set_keys=True)
 

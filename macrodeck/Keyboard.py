@@ -24,6 +24,8 @@ class MyHotKey(HotKey):
 			setattr(key, '_scan', None)
 		if key in self._state:
 			self._state.remove(key)
+		
+		# TODO try just clearing self._state here to avoid sticky hotkeys
 
 class MyGlobalHotKeys(Listener):
     """A keyboard listener supporting a number of global hotkeys.
