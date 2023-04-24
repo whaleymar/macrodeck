@@ -1,7 +1,6 @@
 import macrodeck.Keyboard as Keyboard
 import macrodeck.KeyCategories as KeyCategories
-from macrodeck.gui.MacroWindow import MacroWindow
-from macrodeck.gui.style import FC_DEFAULT, BC_DEFAULT, XPAD, YPAD, ICON_SIZE, ICON_SIZE_WIDE
+from macrodeck.gui.style import FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, BC_DEFAULT, XPAD, YPAD, ICON_SIZE, ICON_SIZE_WIDE
 from macrodeck.gui.util import hovercolor, ctkimage
 import tkinter as tk
 import customtkinter as ctk
@@ -23,7 +22,7 @@ FLEX_WIDGET_COL = 1
 FLEX_WIDGET_COLSPAN = 2
 
 class Action(): # lawsuit?
-    def __init__(self, name, default_arg, icon, default_text=None, requires_arg=False, inactive=False):
+    def __init__(self, name, default_arg, icon, default_text=None, requires_arg=False, inactive=False, calls_after=False):
         self.name = name
         self.default_arg = default_arg
         self.default_text = default_text
@@ -31,6 +30,7 @@ class Action(): # lawsuit?
         self.requires_arg = requires_arg
         self._inactive = inactive # if true, this action does nothing and will make the button grayed-out
         self.enum = None
+        self.calls_after = calls_after
 
     def display_widget(self, app, changed):
         app.destroy_flex()
@@ -122,7 +122,7 @@ class StopMedia(Action):
 
 class OpenView(Action):
     def __init__(self):
-        super().__init__("Open View", 0, ctkimage('assets/action_openview.png', ICON_SIZE), requires_arg=True)
+        super().__init__("Open View", 0, ctkimage('assets/action_openview.png', ICON_SIZE), requires_arg=True, calls_after=True)
 
     def _widget(self, app, frame, changed):
         """
@@ -146,19 +146,22 @@ class OpenView(Action):
 
         return button_view, None
 
-    def __call__(self, view_enum, app):
+    def __call__(self, view_enum, app, multi_action=False):
         """
         Button Action: tells mainloop to run App.switch_view
         keyboard listener must use this callback
         """
 
         app.view_enum = view_enum
-        app.after(0, app.switch_view)
+        if multi_action:
+            app.switch_view()
+        else:
+            app.after(0, app.switch_view)
 
 
 class Macro(Action):
     def __init__(self):
-        super().__init__("Run Macro", None, ctkimage('assets/action_macro.png', ICON_SIZE), requires_arg=True)
+        super().__init__("Run Macro", None, ctkimage('assets/action_macro.png', ICON_SIZE), requires_arg=True, calls_after=True)
         self.keyboard = Keyboard.keyboard()
 
     def _widget(self, app, frame, changed):
@@ -166,46 +169,87 @@ class Macro(Action):
         sets flex button to "macro config" button
         """
 
-        button = ctk.CTkButton(frame, 
-                                command=partial(self.macroconfig, app),
-                                text='Set Macro',
-                                fg_color=FC_DEFAULT,
-                                hover_color=hovercolor(FC_DEFAULT),
-                                font=app.STANDARDFONT)
-        
-        return button, None
+        if not changed:
+            arg = app.current_button.get_arg()
+            modifier, key = arg
+            modifier = modifier.replace("MENU","ALT").replace("LWIN","WIN")
+        else:
+            modifier = None
+            key = None
 
-    def __call__(self, keyset, app):
+        self.modMenu = ctk.CTkOptionMenu(master=frame,
+                                    values=KeyCategories.MODIFIERKEYSMACRO,
+                                    font=app.STANDARDFONT,
+                                    fg_color=FC_DEFAULT,
+                                    command=partial(self.macro_config, app, True))
+        self.modMenu.set(KeyCategories.MODIFIERKEYSMACRO[0] if modifier is None else modifier)
+
+        self.keyMenu = ctk.CTkOptionMenu(master=frame,
+                                    values=[''],
+                                    fg_color=FC_DEFAULT,
+                                    font=app.STANDARDFONT)
+
+        # create sub-menus for key categories:
+        def subKeyMenu(name, keys):
+            newKeyMenu = tk.Menu(master = self.keyMenu._dropdown_menu, 
+                                 tearoff=0,
+                                 fg='white',
+                                 background=FC_EMPTY,
+                                 activebackground='gray30',
+                                 bd=1,
+                                 relief=None)
+            for _key in keys:
+                newKeyMenu.add_command(label=_key, 
+                                       command=partial(self.macro_config, app, False, _key)
+                                       )
+            self.keyMenu._dropdown_menu.add_cascade(label=name, menu=newKeyMenu)
+
+        subKeyMenu('Alphanumeric', KeyCategories.ALPHANUMERICKEYS)
+        subKeyMenu('Numpad', KeyCategories.NUMPADKEYS)
+        subKeyMenu('Function', KeyCategories.FUNCTIONKEYS)
+        # subKeyMenu('System', key_categories.SYSTEMKEYS) # not working
+        subKeyMenu('Misc', KeyCategories.MISCKEYS)
+        # subKeyMenu('Mouse', key_categories.MOUSEKEYS) # not working 
+        subKeyMenu('Media', KeyCategories.MEDIAKEYS)
+
+        self.keyMenu.set('' if key is None else key)
+
+        return self.modMenu, self.keyMenu
+
+    def __call__(self, keyset, app, multi_action=False):
         """
-        tells mainloop to run App.run_macro, then kills hotkeys
+        runs macro within tk mainloop
         """
 
         self.to_press = keyset
-        app.after(100, self.run_macro)
-        app.kill_hotkeys()
-        app.after_idle(app.init_hotkeys)
 
-    def macroconfig(self, app):
+        if multi_action:
+            # already in mainloop
+            self.run_macro()
+        else:
+            # tells mainloop to run App.run_macro, then kills hotkeys
+            app.after(100, self.run_macro)
+            app.kill_hotkeys()
+            app.after_idle(app.init_hotkeys)
+
+    def macro_config(self, app, is_modifier, _key):
         """
-        Opens MacroWindow instance and changes button's macro once closed
+        Updates button arg with new macro
         """
+        if is_modifier:
+            modifier = _key
+            key = self.keyMenu.get()
+        else:
+            modifier = self.modMenu.get()
+            key = _key
+            self.keyMenu.set(_key) # have to set here due to nested menu
 
-        app.helpertxt_clear()
-        if app.current_button is None:
-            app.helpertxt_nobtn()
-            return
-
-        win = MacroWindow(app.current_button.arg, app.STANDARDFONT)
-        newmacro = win.get()
-        if newmacro is None:
+        if not (len(modifier)>0 or len(key)>0):
             return
         
-        # convert modifiers with map
-        for i in range(len(newmacro)):
-            if newmacro[i][0]=='':continue
-            newmacro[i] = ("+".join([KeyCategories.MODIFIER_TO_VK[key] for key in newmacro[i][0].split('+')]), newmacro[i][1])
-
-        app.current_button.set_arg(newmacro)
+        modifier = "+".join([KeyCategories.MODIFIER_TO_VK[key] for key in modifier.split('+')])
+        
+        app.current_button.set_arg((modifier, key))
 
     def run_macro(self):
         """
@@ -216,10 +260,9 @@ class Macro(Action):
             return
         
         time.sleep(0.1) # give time for hotkey to be depressed # TODO better way to do this by checking pressed keys?
-        for keys in self.to_press:
-            keys = [key for key in keys if len(key)>0] # remove empty modifier
-            keys = [Keyboard.to_pynput(key) for seq in keys for key in seq.split('+')] # split modifier and flatten
-            self.keyboard.press_keys(keys) # send keypress
+        keys = [key for key in self.to_press if len(key)>0] # remove empty modifier
+        keys = [Keyboard.to_pynput(key) for seq in keys for key in seq.split('+')] # split modifier and flatten
+        self.keyboard.press_keys(keys) # send keypress
 
         self.to_press = None
 
@@ -240,7 +283,7 @@ class Web(Action):
 
         # set url in text entry box
         if not changed:
-            app.flex_text.set(app.current_button.arg) # TODO might need to bring this into display_widget() ?
+            app.flex_text.set(app.current_button.arg)
 
         return entry, None
 
@@ -335,7 +378,7 @@ class OBSMute(Action):
 
 class ManageWindow(Action):
     def __init__(self):
-        super().__init__("Move/Open Application", None, None, requires_arg=True)
+        super().__init__("Move/Open Application", None, None, requires_arg=True, calls_after=True)
         self.connection = wmi.WMI()
         self.nameCache = {}
 
@@ -380,8 +423,11 @@ class ManageWindow(Action):
 
         return button, updatebutton
 
-    def __call__(self, arg, app):        
-        app.after(0, self.moveWindow, arg)
+    def __call__(self, arg, app, multi_action=False):
+        if multi_action:
+            self.moveWindow(arg)
+        else:
+            app.after(0, self.moveWindow, arg)
 
     def moveWindow(self, arg):
         appname, isPath, coords = arg

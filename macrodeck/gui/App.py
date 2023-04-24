@@ -215,8 +215,6 @@ class App(ctk.CTk):
         init obs web server (if possible)
         """
 
-        # TODO helpertxt instead of print
-
         print("Attempting to connect to OBS web server")
 
         if not OBS_CONNECTED:
@@ -511,7 +509,8 @@ class App(ctk.CTk):
             self.current_button.configure(border_color=BC_DEFAULT)
             self.current_button = None
 
-        self.destroy_flex() # TODO hide button editor
+        self.destroy_flex()
+        self.hideEditMenu()
         
         if ix is None:
             ix=len(self.views)

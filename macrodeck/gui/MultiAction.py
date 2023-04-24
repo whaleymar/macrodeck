@@ -14,7 +14,7 @@ class MultiAction(ActionClasses.Action):
         self.app = None # store pointer to use some app methods
         self.created_frames = False
         self.wraplength = 75
-        self.secs_between_actions = 0.1
+        self.secs_between_actions = 0
 
     def _widget(self, app, frame, changed):
         """
@@ -37,17 +37,27 @@ class MultiAction(ActionClasses.Action):
         """
         runs each action in loop
         """
+        if self.app is None:
+            self.app = app
+        app.after(100, self.run_actions, arg)
 
-        actions = app.get_actions()
+    def run_actions(self, arg):
+        actions = self.app.get_actions()
         for config in arg:
             action_enum = config[0]
             action_arg = config[1]
             if action_enum is None or (actions[action_enum].requires_arg and action_arg is None):
                 continue
-            if actions[action_enum].requires_arg:
-                actions[action_enum](action_arg, app)
+            if actions[action_enum].calls_after:
+                if actions[action_enum].requires_arg:
+                    actions[action_enum](action_arg, self.app, multi_action=True)
+                else:
+                    actions[action_enum](self.app, multi_action=True)
             else:
-                actions[action_enum](app)
+                if actions[action_enum].requires_arg:
+                    actions[action_enum](action_arg, self.app)
+                else:
+                    actions[action_enum](self.app)
             
             time.sleep(self.secs_between_actions)
 
@@ -138,7 +148,7 @@ class MultiAction(ActionClasses.Action):
             for i in range(len(args)):
                 self.new_row(i, args[i])
 
-    def new_row(self, ix, config=None): # TODO pass action args if loading existing MultiAction
+    def new_row(self, ix, config=None):
 
 
         # store new action button:
