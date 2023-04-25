@@ -36,16 +36,26 @@ class Action(): # lawsuit?
         self.calls_after = calls_after
 
     def display_widget(self, app, changed):
-        app.destroy_flex()
+        # app.destroy_flex()
+        to_destroy = [widget for widget in (app.flex_button, app.flex_button2) if widget is not None]
         widget1, widget2 = self._widget(app, app.bottomframe, changed)
 
         colspan = FLEX_WIDGET_COLSPAN if widget2 is None else FLEX_WIDGET_COLSPAN//2
         if widget1 is not None:
             widget1.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = colspan, padx=XPAD, pady=YPAD, sticky='nsew')
             app.flex_button = widget1
+
         if widget2 is not None:
             widget2.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL+1, columnspan = colspan, padx=XPAD, pady=YPAD, sticky='nsew')
             app.flex_button2 = widget2
+        
+        # destroy old widgets after new ones are set
+        for widget in to_destroy:
+            try:
+                widget.destroy()
+            except ValueError:
+                # getting some error with setting the font. Seems like a lib issue
+                pass
 
     def _widget(self, app, frame, changed):
         return (None, None)

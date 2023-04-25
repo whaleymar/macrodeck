@@ -95,7 +95,7 @@ class ActionButton(ctk.CTkButton):
             return None
         return self.modifier[:-1], self.key # [:-1] since we add '+' to modifier
 
-    def set_text(self, text, default=False):
+    def set_text(self, text, default=False, wraplen=None):
         # set button text
         # if default: sets default text attribute
 
@@ -106,7 +106,10 @@ class ActionButton(ctk.CTkButton):
         if self._text_label is None:
             self.configure(text=' ')
             self.configure(text='')
-            self._text_label.configure(wraplength=WRAPLEN)
+            if wraplen is None:
+                self._text_label.configure(wraplength=WRAPLEN)
+            else:
+                self._text_label.configure(wraplength=wraplen)
 
 
         if default and self.default_text == self.cget('text'):
@@ -169,7 +172,8 @@ class ActionButton(ctk.CTkButton):
         """
         returns (mutable) button metadata (used for saving)
 
-        self.get_action() should always be first
+        self.get_action() should always be first,
+        and self.get_arg() second
         """
 
         return [self.get_action(), self.get_arg(), self.get_keys(), self.get_text(), self.get_colors(), self.get_image()]
@@ -179,8 +183,6 @@ class ActionButton(ctk.CTkButton):
         # messing with weighting so action icon doesn't move with text
         if self._text_label is not None:
             self._text_label.grid_propagate(0)
-        if self._image_label is not None:
-            self.grid_rowconfigure(3, weight=1)
 
         if self._compound == "right":
             if self._image_label is not None:
@@ -189,15 +191,25 @@ class ActionButton(ctk.CTkButton):
                 self._text_label.grid(row=2, column=1, sticky="e")
         elif self._compound == "left":
             if self._image_label is not None:
-                self._image_label.grid(row=2, column=1, sticky="e")
+                self.grid_columnconfigure(1,weight=1)
             if self._text_label is not None:
-                self._text_label.grid(row=2, column=3, sticky="w")
+                self.grid_columnconfigure(2, weight=1)
+
+            if self._image_label is not None:
+                self._image_label.grid(row=1, column=1, padx=5, sticky="w")
+            if self._text_label is not None:
+                self._text_label.grid(row=1, column=2, padx=5, sticky="w")
         elif self._compound == "top":
             if self._image_label is not None:
                 self._image_label.grid(row=1, column=2, sticky="s")
             if self._text_label is not None:
                 self._text_label.grid(row=3, column=2, sticky="n")
+        
         elif self._compound == "bottom":
+            if self._image_label is not None:
+                self.grid_rowconfigure(3, weight=1)
+
+            # TODO if no text label then put image at top (and make big)
             if self._image_label is not None:
                 self._image_label.grid(row=3, column=2, pady=3, sticky="s")
             if self._text_label is not None:

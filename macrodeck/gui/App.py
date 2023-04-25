@@ -9,7 +9,7 @@ from macrodeck.gui.ButtonView import View, ViewButton
 from macrodeck.gui.ColorPicker import AskColor # from https://github.com/Akascape/CTkColorPicker
 from macrodeck.gui.HotkeyWindow import HotkeyWindow
 from macrodeck.gui.ImageWindow import ImageWindow
-from macrodeck.gui.MultiAction import MultiAction
+from macrodeck.gui.MultiAction import MultiAction, WRAPLEN_MA
 from macrodeck.gui.style import BC_ACTIVE, BC_DEFAULT, FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE, ICON_SIZE_WIDE, XPAD, YPAD
 from functools import partial
 import json
@@ -122,7 +122,7 @@ class App(ctk.CTk):
         self.lframe = ctk.CTkScrollableFrame(self, corner_radius=0, height=YDIM)
         self.lframe.grid(row=0, column=0, rowspan=2, sticky='nsew')
         self.lframe.grid_columnconfigure(0,weight=1)
-        self.newviewbutton = ctk.CTkButton(self.lframe, corner_radius=0, height=40, border_spacing=10,
+        self.newviewbutton = ctk.CTkButton(self.lframe, corner_radius=4, height=40, border_spacing=10,
                                                 text="New View", 
                                                 font=self.STANDARDFONT,
                                                 anchor='w', command=self.new_view)
@@ -750,6 +750,9 @@ class App(ctk.CTk):
             # convert from action enum to uid
             configs = view.configs
             for config in configs:
+                if config[0]==len(ACTIONS)-1:
+                    for config2 in config[1]:
+                        config2[0] = ENUM_TO_UID[config2[0]]
                 config[0] = ENUM_TO_UID[config[0]]
             data_views[str(view)] = configs
 
@@ -799,6 +802,9 @@ class App(ctk.CTk):
             # convert from Action uid to Enum
             for config in configs:
                 config[0] = UID_TO_ENUM[config[0]]
+                if config[0]==len(ACTIONS)-1: # is multi action
+                    for config2 in config[1]:
+                        config2[0] = UID_TO_ENUM[config2[0]]
             self.views.append(View(name, configs, False))
         
         self.views[0].to_buttons(self.buttons, self.images, ACTION_ICONS, set_keys=True)
@@ -827,7 +833,7 @@ class App(ctk.CTk):
         self.viewbuttons = []
         for i,view in enumerate(self.views):
             fg_color = ('gray70', 'gray30') if i==self.current_view else 'transparent'
-            newbutton = ViewButton(self.lframe, corner_radius=0, height=40, border_spacing=10,
+            newbutton = ViewButton(self.lframe, corner_radius=4, height=40, border_spacing=10,
                                       text=str(view), fg_color=fg_color, 
                                       font=self.STANDARDFONT, hover_color=('gray70', 'gray30'),
                                       anchor='w', 
@@ -892,7 +898,10 @@ class App(ctk.CTk):
 
         # args has metadata on the variable who called us    
         if self.current_button is not None:
-            self.current_button.set_text(self.text_shared.get())
+            if not self.MAframe_active:
+                self.current_button.set_text(self.text_shared.get())
+            else:
+                self.current_button.set_text(self.text_shared.get(), wraplen=WRAPLEN_MA)
         else:
             self.helpertxt_nobtn()
 
