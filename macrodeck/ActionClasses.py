@@ -1,6 +1,15 @@
 import macrodeck.Keyboard as Keyboard
 import macrodeck.KeyCategories as KeyCategories
-from macrodeck.gui.style import FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, BC_DEFAULT, XPAD, YPAD, ICON_SIZE, ICON_SIZE_WIDE
+from macrodeck.gui.style import (
+    FC_DEFAULT,
+    FC_DEFAULT2,
+    FC_EMPTY,
+    BC_DEFAULT,
+    XPAD,
+    YPAD,
+    ICON_SIZE,
+    ICON_SIZE_WIDE,
+)
 from macrodeck.gui.util import hovercolor, ctkimage
 import tkinter as tk
 import customtkinter as ctk
@@ -14,9 +23,10 @@ import time
 
 try:
     from obswebsocket import requests
-    HAS_OBSWS=True
+
+    HAS_OBSWS = True
 except ModuleNotFoundError:
-    HAS_OBSWS=False
+    HAS_OBSWS = False
 
 FLEX_WIDGET_ROW = 2
 FLEX_WIDGET_COL = 1
@@ -24,31 +34,59 @@ FLEX_WIDGET_COLSPAN = 2
 
 _keyboard = Keyboard.keyboard()
 
-class Action(): # lawsuit?
-    def __init__(self, name, default_arg, icon, default_text=None, requires_arg=False, inactive=False, calls_after=False):
+
+class Action:  # lawsuit?
+    def __init__(
+        self,
+        name,
+        default_arg,
+        icon,
+        default_text=None,
+        requires_arg=False,
+        inactive=False,
+        calls_after=False,
+    ):
         self.name = name
         self.default_arg = default_arg
         self.default_text = default_text
         self.icon = icon
         self.requires_arg = requires_arg
-        self._inactive = inactive # if true, this action does nothing and will make the button grayed-out
+        self._inactive = inactive  # if true, this action does nothing and will make the button grayed-out
         self.enum = None
         self.calls_after = calls_after
 
     def display_widget(self, app, changed):
         # app.destroy_flex()
-        to_destroy = [widget for widget in (app.flex_button, app.flex_button2) if widget is not None]
+        to_destroy = [
+            widget
+            for widget in (app.flex_button, app.flex_button2)
+            if widget is not None
+        ]
         widget1, widget2 = self._widget(app, app.bottomframe, changed)
 
-        colspan = FLEX_WIDGET_COLSPAN if widget2 is None else FLEX_WIDGET_COLSPAN//2
+        colspan = FLEX_WIDGET_COLSPAN if widget2 is None else FLEX_WIDGET_COLSPAN // 2
         if widget1 is not None:
-            widget1.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL, columnspan = colspan, padx=XPAD, pady=YPAD, sticky='nsew')
+            widget1.grid(
+                row=FLEX_WIDGET_ROW,
+                column=FLEX_WIDGET_COL,
+                columnspan=colspan,
+                padx=XPAD,
+                pady=YPAD,
+                sticky="nsew",
+            )
             app.flex_button = widget1
 
         if widget2 is not None:
-            widget2.grid(row=FLEX_WIDGET_ROW, column=FLEX_WIDGET_COL+1, columnspan = colspan, padx=XPAD, pady=YPAD, sticky='nsew')
+            widget2.grid(
+                row=FLEX_WIDGET_ROW,
+                column=FLEX_WIDGET_COL + 1,
+                columnspan=colspan,
+                padx=XPAD,
+                pady=YPAD,
+                sticky="nsew",
+            )
             app.flex_button2 = widget2
-        
+
         # destroy old widgets after new ones are set
         for widget in to_destroy:
             try:
@@ -71,8 +109,8 @@ class Action(): # lawsuit?
         set button action enum, default text, and default arg
         """
         button.set_action(self.enum)
-        
-        if self.default_text is not None: 
+
+        if self.default_text is not None:
             button.set_text(self.default_text, default=True)
 
         button.set_arg(self.default_arg)
@@ -104,25 +142,29 @@ class NoAction(Action):
 
 class PlayMedia(Action):
     def __init__(self):
-        super().__init__("Play Media", None, ctkimage('assets/action_audio.png', ICON_SIZE_WIDE), requires_arg=True)
+        super().__init__(
+            "Play Media",
+            None,
+            ctkimage("assets/action_audio.png", ICON_SIZE_WIDE),
+            requires_arg=True,
+        )
 
     def _widget(self, app, frame, changed):
         """
         sets flex button to "media chooser" button
         """
 
-        filetypes = (
-            ('MP3 files', '*.mp3'),
-            ('All Files', '*.*')
+        filetypes = (("MP3 files", "*.mp3"), ("All Files", "*.*"))
+
+        button = ctk.CTkButton(
+            frame,
+            command=partial(app.selectfile, filetypes),
+            text="Choose File",
+            fg_color=FC_DEFAULT,
+            hover_color=hovercolor(FC_DEFAULT),
+            font=app.STANDARDFONT,
         )
 
-        button = ctk.CTkButton(frame, 
-                                command=partial(app.selectfile, filetypes), 
-                                text='Choose File',
-                                fg_color=FC_DEFAULT,
-                                hover_color=hovercolor(FC_DEFAULT),
-                                font=app.STANDARDFONT)
-        
         return button, None
 
     def __call__(self, path, app):
@@ -134,7 +176,12 @@ class PlayMedia(Action):
 
 class PauseMedia(Action):
     def __init__(self):
-        super().__init__("Pause Media", None, ctkimage('assets/action_pause.png', ICON_SIZE), default_text="Pause Media")
+        super().__init__(
+            "Pause Media",
+            None,
+            ctkimage("assets/action_pause.png", ICON_SIZE),
+            default_text="Pause Media",
+        )
 
     def __call__(self, app):
         app.player.toggle_pause()
@@ -145,8 +192,13 @@ class PauseMedia(Action):
 
 class StopMedia(Action):
     def __init__(self):
-        super().__init__("Stop Media", None, ctkimage('assets/action_mute.png', ICON_SIZE), default_text="Stop Media")
-    
+        super().__init__(
+            "Stop Media",
+            None,
+            ctkimage("assets/action_mute.png", ICON_SIZE),
+            default_text="Stop Media",
+        )
+
     def __call__(self, app):
         app.player.reset()
 
@@ -156,7 +208,13 @@ class StopMedia(Action):
 
 class OpenView(Action):
     def __init__(self):
-        super().__init__("Open View", 0, ctkimage('assets/action_openview.png', ICON_SIZE), requires_arg=True, calls_after=True)
+        super().__init__(
+            "Open View",
+            0,
+            ctkimage("assets/action_openview.png", ICON_SIZE),
+            requires_arg=True,
+            calls_after=True,
+        )
 
     def _widget(self, app, frame, changed):
         """
@@ -165,17 +223,22 @@ class OpenView(Action):
 
         views = [str(l) for l in app.views]
 
-        button_view = ctk.CTkOptionMenu(frame,
-                                command=app.view_from_dropdown, 
-                                values=views,
-                                fg_color=FC_DEFAULT,
-                                button_hover_color=hovercolor(FC_DEFAULT),
-                                font=app.STANDARDFONT)
-        
+        button_view = ctk.CTkOptionMenu(
+            frame,
+            command=app.view_from_dropdown,
+            values=views,
+            fg_color=FC_DEFAULT,
+            button_hover_color=hovercolor(FC_DEFAULT),
+            font=app.STANDARDFONT,
+        )
+
         button_view.set(str(app.views[app.current_button.arg]))
 
         # set button default text (except for back buttons)
-        if changed and (app.current_button is not app.buttons[app.back_button] or app.views[app.current_view].ismain()):
+        if changed and (
+            app.current_button is not app.buttons[app.back_button]
+            or app.views[app.current_view].ismain()
+        ):
             app.view_from_dropdown(button_view.get())
 
         return button_view, None
@@ -198,7 +261,13 @@ class OpenView(Action):
 
 class Macro(Action):
     def __init__(self):
-        super().__init__("Run Macro", None, ctkimage('assets/action_macro.png', ICON_SIZE), requires_arg=True, calls_after=True)
+        super().__init__(
+            "Run Macro",
+            None,
+            ctkimage("assets/action_macro.png", ICON_SIZE),
+            requires_arg=True,
+            calls_after=True,
+        )
         self.keyboard = _keyboard
 
     def _widget(self, app, frame, changed):
@@ -209,47 +278,52 @@ class Macro(Action):
         if not changed:
             arg = app.current_button.get_arg()
             modifier, key = arg
-            modifier = modifier.replace("MENU","ALT").replace("LWIN","WIN")
+            modifier = modifier.replace("MENU", "ALT").replace("LWIN", "WIN")
         else:
             modifier = None
             key = None
 
-        self.modMenu = ctk.CTkOptionMenu(master=frame,
-                                    values=KeyCategories.MODIFIERKEYSMACRO,
-                                    font=app.STANDARDFONT,
-                                    fg_color=FC_DEFAULT,
-                                    command=partial(self.macro_config, app, True))
-        self.modMenu.set(KeyCategories.MODIFIERKEYSMACRO[0] if modifier is None else modifier)
+        self.modMenu = ctk.CTkOptionMenu(
+            master=frame,
+            values=KeyCategories.MODIFIERKEYSMACRO,
+            font=app.STANDARDFONT,
+            fg_color=FC_DEFAULT,
+            command=partial(self.macro_config, app, True),
+        )
+        self.modMenu.set(
+            KeyCategories.MODIFIERKEYSMACRO[0] if modifier is None else modifier
+        )
 
-        self.keyMenu = ctk.CTkOptionMenu(master=frame,
-                                    values=[''],
-                                    fg_color=FC_DEFAULT,
-                                    font=app.STANDARDFONT)
+        self.keyMenu = ctk.CTkOptionMenu(
+            master=frame, values=[""], fg_color=FC_DEFAULT, font=app.STANDARDFONT
+        )
 
         # create sub-menus for key categories:
         def subKeyMenu(name, keys):
-            newKeyMenu = tk.Menu(master = self.keyMenu._dropdown_menu, 
-                                 tearoff=0,
-                                 fg='white',
-                                 background=FC_EMPTY,
-                                 activebackground='gray30',
-                                 bd=1,
-                                 relief=None)
+            newKeyMenu = tk.Menu(
+                master=self.keyMenu._dropdown_menu,
+                tearoff=0,
+                fg="white",
+                background=FC_EMPTY,
+                activebackground="gray30",
+                bd=1,
+                relief=None,
+            )
             for _key in keys:
-                newKeyMenu.add_command(label=_key, 
-                                       command=partial(self.macro_config, app, False, _key)
-                                       )
+                newKeyMenu.add_command(
+                    label=_key, command=partial(self.macro_config, app, False, _key)
+                )
             self.keyMenu._dropdown_menu.add_cascade(label=name, menu=newKeyMenu)
 
-        subKeyMenu('Alphanumeric', KeyCategories.ALPHANUMERICKEYS)
-        subKeyMenu('Numpad', KeyCategories.NUMPADKEYS)
-        subKeyMenu('Function', KeyCategories.FUNCTIONKEYS)
+        subKeyMenu("Alphanumeric", KeyCategories.ALPHANUMERICKEYS)
+        subKeyMenu("Numpad", KeyCategories.NUMPADKEYS)
+        subKeyMenu("Function", KeyCategories.FUNCTIONKEYS)
         # subKeyMenu('System', key_categories.SYSTEMKEYS) # not working
-        subKeyMenu('Misc', KeyCategories.MISCKEYS)
-        # subKeyMenu('Mouse', key_categories.MOUSEKEYS) # not working 
-        subKeyMenu('Media', KeyCategories.MEDIAKEYS)
+        subKeyMenu("Misc", KeyCategories.MISCKEYS)
+        # subKeyMenu('Mouse', key_categories.MOUSEKEYS) # not working
+        subKeyMenu("Media", KeyCategories.MEDIAKEYS)
 
-        self.keyMenu.set('' if key is None else key)
+        self.keyMenu.set("" if key is None else key)
 
         return self.modMenu, self.keyMenu
 
@@ -282,14 +356,16 @@ class Macro(Action):
         else:
             modifier = self.modMenu.get()
             key = _key
-            self.keyMenu.set(_key) # have to set here due to nested menu
+            self.keyMenu.set(_key)  # have to set here due to nested menu
 
-        if not (len(modifier)>0 or len(key)>0):
+        if not (len(modifier) > 0 or len(key) > 0):
             return
-        
-        if len(modifier)>0:
-            modifier = "+".join([KeyCategories.MODIFIER_TO_VK[_key] for _key in modifier.split('+')])
-        
+
+        if len(modifier) > 0:
+            modifier = "+".join(
+                [KeyCategories.MODIFIER_TO_VK[_key] for _key in modifier.split("+")]
+            )
+
         app.current_button.set_arg((modifier, key))
 
     def run_macro(self):
@@ -299,26 +375,35 @@ class Macro(Action):
 
         if self.to_press is None:
             return
-        
-        time.sleep(0.1) # give time for hotkey to be depressed # TODO better way to do this by checking pressed keys?
-        keys = [key for key in self.to_press if len(key)>0] # remove empty modifier
-        keys = [Keyboard.to_pynput(key) for seq in keys for key in seq.split('+')] # split modifier and flatten
-        self.keyboard.press_keys(keys) # send keypress
+
+        time.sleep(
+            0.1
+        )  # give time for hotkey to be depressed # TODO better way to do this by checking pressed keys?
+        keys = [key for key in self.to_press if len(key) > 0]  # remove empty modifier
+        keys = [
+            Keyboard.to_pynput(key) for seq in keys for key in seq.split("+")
+        ]  # split modifier and flatten
+        self.keyboard.press_keys(keys)  # send keypress
 
         self.to_press = None
 
 
 class Web(Action):
     def __init__(self):
-        super().__init__("Open Web Page", "", ctkimage('assets/action_web.png', ICON_SIZE), requires_arg=True)
+        super().__init__(
+            "Open Web Page",
+            "",
+            ctkimage("assets/action_web.png", ICON_SIZE),
+            requires_arg=True,
+        )
 
     def _widget(self, app, frame, changed):
         """
         Sets flex button to text entry widget for URL
         """
 
-        app.flex_text = tk.StringVar(frame, value='')
-        app.flex_text.trace('w',app.arg_from_text) # sets URL argument
+        app.flex_text = tk.StringVar(frame, value="")
+        app.flex_text.trace("w", app.arg_from_text)  # sets URL argument
 
         entry = ctk.CTkEntry(frame, textvariable=app.flex_text)
 
@@ -343,23 +428,28 @@ class OBSScene(Action):
         """
         sets flex button to drop down widget containing all OBS scenes
         """
-        
+
         # if app.obsws is None: # not working when auto-reconnect is enabled
         try:
             app.obsws.call(requests.GetSceneList())
         except:
-            app.helper.configure(text='Could not connect to OBS web server')
+            app.helper.configure(text="Could not connect to OBS web server")
             return None, None
-        
-        scenes = [scene['sceneName'] for scene in app.obsws.call(requests.GetSceneList()).getScenes()]
 
-        button = ctk.CTkOptionMenu(frame,
-                                command=app.arg_from_dropdown, 
-                                values=scenes,
-                                fg_color=FC_DEFAULT,
-                                button_hover_color=hovercolor(FC_DEFAULT),
-                                font=app.STANDARDFONT)
-        
+        scenes = [
+            scene["sceneName"]
+            for scene in app.obsws.call(requests.GetSceneList()).getScenes()
+        ]
+
+        button = ctk.CTkOptionMenu(
+            frame,
+            command=app.arg_from_dropdown,
+            values=scenes,
+            fg_color=FC_DEFAULT,
+            button_hover_color=hovercolor(FC_DEFAULT),
+            font=app.STANDARDFONT,
+        )
+
         if not changed:
             button.set(app.current_button.arg)
         else:
@@ -373,9 +463,9 @@ class OBSScene(Action):
         try:
             app.obsws.call(requests.GetSceneList())
         except:
-            app.helper.configure(text='Could not connect to OBS web server')
+            app.helper.configure(text="Could not connect to OBS web server")
             return
-        
+
         app.obsws.call(requests.SetCurrentProgramScene(sceneName=arg))
 
     def unique_key(self) -> int:
@@ -391,21 +481,26 @@ class OBSMute(Action):
         """
         sets flex button to drop down widget containing all OBS sources
         """
-        
-        if app.obsws is None:
-            app.helper.configure(text='Could not connect to OBS web server')
-            return None, None
-        
-        sourcelisttemp = app.obsws.call(requests.GetSourcesList())
-        sources = [source['sourceName'] for source in app.obsws.call(requests.GetSourcesList()).getSources()]
 
-        button = ctk.CTkOptionMenu(frame,
-                                command=app.arg_from_dropdown, 
-                                values=sources,
-                                fg_color=FC_DEFAULT,
-                                button_hover_color=hovercolor(FC_DEFAULT),
-                                font=app.STANDARDFONT)
-        
+        if app.obsws is None:
+            app.helper.configure(text="Could not connect to OBS web server")
+            return None, None
+
+        sourcelisttemp = app.obsws.call(requests.GetSourcesList())
+        sources = [
+            source["sourceName"]
+            for source in app.obsws.call(requests.GetSourcesList()).getSources()
+        ]
+
+        button = ctk.CTkOptionMenu(
+            frame,
+            command=app.arg_from_dropdown,
+            values=sources,
+            fg_color=FC_DEFAULT,
+            button_hover_color=hovercolor(FC_DEFAULT),
+            font=app.STANDARDFONT,
+        )
+
         if not changed:
             button.set(app.current_button.arg)
         else:
@@ -416,9 +511,9 @@ class OBSMute(Action):
 
     def __call__(self, arg, app):
         if app.obsws is None:
-            app.helper.configure(text='Could not connect to OBS web server')
+            app.helper.configure(text="Could not connect to OBS web server")
             return
-        
+
         app.obsws.call(requests.GetMute(arg))
         app.obsws.call(requests.SetMute(arg))
 
@@ -428,7 +523,9 @@ class OBSMute(Action):
 
 class ManageWindow(Action):
     def __init__(self):
-        super().__init__("Move/Open Application", None, None, requires_arg=True, calls_after=True)
+        super().__init__(
+            "Move/Open Application", None, None, requires_arg=True, calls_after=True
+        )
         self.connection = wmi.WMI()
         self.nameCache = {}
 
@@ -438,38 +535,46 @@ class ManageWindow(Action):
 
         on selection: the current position of the window is saved
         """
-        
+
         windows = self.getVisibleWindows()
 
         names = self.getAppNames(windows)
 
         # dropdown containing applications:
-        button = ctk.CTkOptionMenu(frame,
-                                command=partial(self.saveConfig, app, windows), 
-                                values=names,
-                                fg_color=FC_DEFAULT,
-                                button_hover_color=hovercolor(FC_DEFAULT),
-                                dynamic_resizing=False,
-                                font=app.STANDARDFONT)
-        
+        button = ctk.CTkOptionMenu(
+            frame,
+            command=partial(self.saveConfig, app, windows),
+            values=names,
+            fg_color=FC_DEFAULT,
+            button_hover_color=hovercolor(FC_DEFAULT),
+            dynamic_resizing=False,
+            font=app.STANDARDFONT,
+        )
+
         if not changed and app.current_button.arg is not None:
-            hwnd = self.appToWindow(app.current_button.arg[0], app.current_button.arg[1])
+            hwnd = self.appToWindow(
+                app.current_button.arg[0], app.current_button.arg[1]
+            )
             if hwnd is not None:
                 button.set(win32gui.GetWindowText(hwnd))
             else:
-                app.helper.configure(text=f"Could not find window: {os.path.basename(app.current_button.arg[0]) if app.current_button.arg[1] else app.current_button.arg[0]}")
+                app.helper.configure(
+                    text=f"Could not find window: {os.path.basename(app.current_button.arg[0]) if app.current_button.arg[1] else app.current_button.arg[0]}"
+                )
 
         # setting button args if we changed the action:
         if changed:
             self.saveConfig(app, windows, button.get())
 
         # button to update coordinates of selected application:
-        updatebutton = ctk.CTkButton(frame, 
-                                command=partial(self.saveConfig, app, windows), 
-                                text='Update Position',
-                                fg_color=BC_DEFAULT,
-                                hover_color=hovercolor(BC_DEFAULT),
-                                font=app.STANDARDFONT)
+        updatebutton = ctk.CTkButton(
+            frame,
+            command=partial(self.saveConfig, app, windows),
+            text="Update Position",
+            fg_color=BC_DEFAULT,
+            hover_color=hovercolor(BC_DEFAULT),
+            font=app.STANDARDFONT,
+        )
 
         return button, updatebutton
 
@@ -490,24 +595,30 @@ class ManageWindow(Action):
             shouldReturn = True
             # attempt to open the application
             if isPath:
-                os.startfile(appname) # doesn't work for apps from the windows app store? vscode python extension bug: anything opened by this line will be closed when the debugger terminates
-                time.sleep(1) # give time to open
-                
+                os.startfile(
+                    appname
+                )  # doesn't work for apps from the windows app store? vscode python extension bug: anything opened by this line will be closed when the debugger terminates
+                time.sleep(1)  # give time to open
+
                 # re-calc hwnd
                 hwnd = self.appToWindow(appname, isPath)
                 if hwnd is not None:
                     shouldReturn = False
 
             if shouldReturn:
-                print(f"Could not find window: {os.path.basename(appname) if isPath else appname}")
+                print(
+                    f"Could not find window: {os.path.basename(appname) if isPath else appname}"
+                )
                 return
-        
+
         win32gui.MoveWindow(hwnd, *self.boxToParams(coords), True)
         win32gui.SetForegroundWindow(hwnd)
 
     def appToWindow(self, appname, isPath):
         for hwnd in self.getVisibleWindows():
-            if (isPath and self.getAppPath(hwnd)==appname) or (not isPath and win32gui.GetWindowText(hwnd)==appname):
+            if (isPath and self.getAppPath(hwnd) == appname) or (
+                not isPath and win32gui.GetWindowText(hwnd) == appname
+            ):
                 return hwnd
         return None
 
@@ -517,10 +628,13 @@ class ManageWindow(Action):
         """
         if hwnd in self.nameCache.keys():
             return self.nameCache[hwnd]
-        
+
         try:
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
-            for p in self.connection.query('SELECT ExecutablePath FROM Win32_Process WHERE ProcessId = %s' % str(pid)):
+            for p in self.connection.query(
+                "SELECT ExecutablePath FROM Win32_Process WHERE ProcessId = %s"
+                % str(pid)
+            ):
                 exe = p.ExecutablePath
                 break
         except:
@@ -530,11 +644,11 @@ class ManageWindow(Action):
 
         self.nameCache[hwnd] = result
         return result
-        
+
     def boxToParams(self, coords):
         left, top, right, bottom = coords
         return left, top, right - left, bottom - top
-    
+
     def getWindow(self, hwnd, result):
         if win32gui.IsWindowVisible(hwnd) and win32gui.GetWindowText(hwnd):
             result.append(hwnd)
@@ -546,7 +660,7 @@ class ManageWindow(Action):
         result = []
         win32gui.EnumWindows(self.getWindow, result)
         return result
-    
+
     def processEXE(self, exeName):
         if exeName is None:
             exeName = "<No .exe found>"
@@ -554,15 +668,14 @@ class ManageWindow(Action):
             exeName = os.path.basename(exeName)
 
         return exeName
-    
-    def getAppNames(self, windows):
 
+    def getAppNames(self, windows):
         result = []
         for hwnd in windows:
             exeName = self.processEXE(self.getAppPath(hwnd))
             result.append(f"{exeName} | {win32gui.GetWindowText(hwnd)}")
         return result
-    
+
     def saveConfig(self, app, windows, winName=None):
         """
         given a window title, saves button arg as a tuple containing (appname, isPath, coords)
@@ -577,14 +690,16 @@ class ManageWindow(Action):
                     break
         else:
             # "update" button pressed; use current button args
-            hwnd = self.appToWindow(app.current_button.arg[0], app.current_button.arg[1])
+            hwnd = self.appToWindow(
+                app.current_button.arg[0], app.current_button.arg[1]
+            )
 
         if hwnd is None:
             raise ValueError
-        
+
         coords = win32gui.GetWindowRect(hwnd)
 
-        # appname: exe path if exists, else window title 
+        # appname: exe path if exists, else window title
         isPath = True
         appname = self.getAppPath(hwnd)
         if appname is None:
@@ -603,38 +718,39 @@ class EnterText(Action):
         Sets flex button to text entry widget
         """
 
-        app.flex_text = tk.StringVar(frame, value='')
-        app.flex_text.trace('w', app.arg_from_text)
+        app.flex_text = tk.StringVar(frame, value="")
+        app.flex_text.trace("w", app.arg_from_text)
 
         entry = ctk.CTkEntry(frame, textvariable=app.flex_text)
 
         # set text in text entry box
         if not changed:
             app.flex_text.set(app.current_button.arg)
-        
+
         return entry, None
-    
+
     def __call__(self, text, app):
         self.keyboard.type(text)
 
     def unique_key(self) -> int:
         return 10
-    
+
 
 class MediaVolume(Action):
     def __init__(self):
         super().__init__("VLC Volume", None, None, requires_arg=True)
 
     def _widget(self, app, frame, changed):
-        slider = ctk.CTkSlider(frame, from_=0, to=100, command=partial(self.update_volume_setting, app))
-        
+        slider = ctk.CTkSlider(
+            frame, from_=0, to=100, command=partial(self.update_volume_setting, app)
+        )
+
         if not changed:
             slider.set(app.current_button.get_arg())
         else:
             default_volume = 50
             slider.set(default_volume)
             app.current_button.set_arg(default_volume)
-
 
         return slider, None
 
@@ -643,7 +759,7 @@ class MediaVolume(Action):
 
     def unique_key(self) -> int:
         return 12
-    
+
     def update_volume_setting(self, app, value):
         volume = int(value)
         app.current_button.set_arg(volume)
