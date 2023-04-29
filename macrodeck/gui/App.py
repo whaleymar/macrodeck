@@ -480,11 +480,19 @@ class App(ctk.CTk):
         """
 
         if self.flex_button is not None:
-            self.flex_button.destroy()
+            try:
+                self.flex_button.destroy()
+            except ValueError:
+                # some weird error with fonts
+                pass
             self.flex_button = None
 
         if self.flex_button2 is not None:
-            self.flex_button2.destroy()
+            try:
+                self.flex_button2.destroy()
+            except ValueError:
+                # some weird error with fonts
+                pass
             self.flex_button2 = None
 
     def destroy_global_checkbox(self):
