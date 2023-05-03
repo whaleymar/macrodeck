@@ -6,6 +6,15 @@ import macrodeck.ActionClasses as act
 
 BACK_ICON = ctkimage("assets/action_back.png", size=ICON_SIZE)
 
+# get index of "Open View" Action within ACTIONS
+OPENVIEW_IX = None
+for action in ACTIONS:
+    if isinstance(action, act.OpenView):
+        OPENVIEW_IX = action.enum
+        break
+if OPENVIEW_IX is None:
+    raise ValueError("'OpenView' action not found")
+
 
 # ctk button wrapper that stores callback/args, hotkeys, and some convenience methods for main keys
 class ActionButton(ctk.CTkButton):
@@ -50,17 +59,7 @@ class ActionButton(ctk.CTkButton):
     def back_button(self):
         self.unlock()
         self.deactivate()
-
-        # set action to Openview
-        openview_enum = None
-        for action in ACTIONS:
-            if isinstance(action, act.OpenView):
-                openview_enum = action.enum
-                break
-        if openview_enum is None:
-            raise ValueError("'OpenView' action not found")
-        self.set_action(openview_enum)
-
+        self.set_action(OPENVIEW_IX)
         self.set_arg(0)  # point to main view
         self.configure(image=BACK_ICON)
         self._draw()

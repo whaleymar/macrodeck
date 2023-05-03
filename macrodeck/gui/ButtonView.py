@@ -1,5 +1,16 @@
 import customtkinter as ctk
 from macrodeck.gui.style import WRAPLEN
+from macrodeck.Actions import ACTIONS, HAS_OBSWS
+import macrodeck.ActionClasses as act
+
+# get index of "Open View" Action within ACTIONS
+OPENVIEW_IX = None
+for action in ACTIONS:
+    if isinstance(action, act.OpenView):
+        OPENVIEW_IX = action.enum
+        break
+if OPENVIEW_IX is None:
+    raise ValueError("'OpenView' action not found")
 
 
 # container for button grid data
@@ -89,7 +100,7 @@ class View:
         """
         changed = False
         for config in self.configs:
-            if config[0] == 4:  # action is "Open View"
+            if config[0] == OPENVIEW_IX:
                 if config[1] == i:
                     config[1] = j
                     changed = True
@@ -106,7 +117,7 @@ class View:
         changed = False
         delta = 1 if up else -1
         for config in self.configs:
-            if config[0] == 4:  # action is "Open View"
+            if config[0] == OPENVIEW_IX:
                 if config[1] >= start:
                     config[1] = config[1] + delta
                     changed = True
