@@ -573,6 +573,7 @@ class App(ctk.CTk):
 
         self.destroy_flex()
         self.hideEditMenu()
+        self.views[self.current_view].update(self.buttons)
 
         if ix is None:
             ix = len(self.views)
@@ -612,6 +613,10 @@ class App(ctk.CTk):
             if self.current_view in changed:
                 self.views[self.current_view].to_buttons(
                     self.buttons, self.images, ACTION_ICONS
+                )
+
+                self.views[self.current_view].refresh_globals(
+                    self.buttons, self.views[0].configs
                 )
 
         self.refresh_sidebar()
@@ -694,6 +699,10 @@ class App(ctk.CTk):
             if self.current_view in changed:
                 self.views[self.current_view].to_buttons(
                     self.buttons, self.images, ACTION_ICONS
+                )
+
+                self.views[self.current_view].refresh_globals(
+                    self.buttons, self.views[0].configs
                 )
 
         self.refresh_sidebar()

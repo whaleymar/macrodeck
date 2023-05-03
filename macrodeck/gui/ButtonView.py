@@ -30,7 +30,10 @@ class View:
 
     # mutates buttons
     def to_buttons(self, buttons, images, action_icons, set_keys=False):
-        for config, button in zip(self.configs, buttons):
+        for ix in range(len(self.configs)):
+            config = self.configs[ix]
+            button = buttons[ix]
+
             # don't change button if global
             if button._global:
                 if self.ismain():
@@ -68,6 +71,20 @@ class View:
                 button.set_keys(
                     config[2][0], config[2][1]
                 )  # only do this when loading from save
+
+    def refresh_globals(self, buttons, configs_main):
+        # used when the arg of a global "Open View" command is implicitly changed
+
+        for i in range(len(buttons)):
+            button = buttons[i]
+            if not button._global:
+                continue
+
+            config = configs_main[i]
+            button.unlock()
+            button.set_arg(config[1])
+            if not self.ismain():
+                button.lock()
 
     def colors(self):
         # returns set of colors used in self.configs
