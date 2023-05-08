@@ -5,6 +5,7 @@ HAS_OBSWS = act.HAS_OBSWS
 ACTIONS = [
     act.NoAction(),  # this should always be index 0
     act.PlayMedia(),
+    act.ShuffleMedia(),  # dependent on PlayMedia
     act.StopMedia(),
     act.PauseMedia(),
     act.MediaVolume(),

@@ -258,6 +258,16 @@ class App(ctk.CTk):
         self.hotkeys.stop()
         self.hotkeys = None
 
+    def spawn_daemon(self, target, name=None):
+        """
+        spawns daemon thread that runs the function that target points to
+
+        should only be called within mainloop (i think)
+        """
+
+        thread = threading.Thread(target=target, args=[self], daemon=True, name=name)
+        thread.start()
+
     def init_obs_server(self):
         """
         init obs web server (if possible)
@@ -615,9 +625,9 @@ class App(ctk.CTk):
                     self.buttons, self.images, ACTION_ICONS
                 )
 
-                self.views[self.current_view].refresh_globals(
-                    self.buttons, self.views[0].configs
-                )
+            self.views[self.current_view].refresh_globals(
+                self.buttons, self.views[0].configs
+            )
 
         self.refresh_sidebar()
 
@@ -672,6 +682,10 @@ class App(ctk.CTk):
                 self.buttons, self.images, ACTION_ICONS
             )
 
+        self.views[self.current_view].refresh_globals(
+            self.buttons, self.views[0].configs
+        )
+
         self.refresh_sidebar()
 
     def delete_view(self):
@@ -701,9 +715,9 @@ class App(ctk.CTk):
                     self.buttons, self.images, ACTION_ICONS
                 )
 
-                self.views[self.current_view].refresh_globals(
-                    self.buttons, self.views[0].configs
-                )
+            self.views[self.current_view].refresh_globals(
+                self.buttons, self.views[0].configs
+            )
 
         self.refresh_sidebar()
 

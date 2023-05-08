@@ -20,6 +20,7 @@ import win32process
 import wmi
 import os
 import time
+import random
 
 try:
     from obswebsocket import requests
@@ -168,6 +169,7 @@ class PlayMedia(Action):
         return button, None
 
     def __call__(self, path, app):
+        app.player.reset()
         app.player(path)
 
     def unique_key(self) -> int:
@@ -763,3 +765,92 @@ class MediaVolume(Action):
     def update_volume_setting(self, app, value):
         volume = int(value)
         app.current_button.set_arg(volume)
+
+
+class ShuffleMedia(Action):
+    """
+    spawns a thread that plays all unique media in the current view or in child views in a random order (excludes media exclusively in multi actions)
+    """
+
+    def __init__(self):
+        super().__init__(
+            "Shuffle Media", None, None, requires_arg=False, calls_after=True
+        )
+        self.open_view_ix = None
+        self.play_media_ix = None
+
+    def __call__(self, app):
+        if (
+            self.open_view_ix is None or self.play_media_ix is None
+        ) and not self.search_actions(app.get_actions()):
+            raise ValueError(
+                "'OpenView' and 'PlayMedia' Actions required for 'ShuffleMedia'"
+            )
+
+        if app.player.playlist_mode:
+            # skip song
+            app.player.stop()
+            return
+
+        # search media:
+        self.tracked_views = set()
+        self.to_play = set()
+        self.search_views(app.views, app.buttons, app.current_view)
+
+        # shuffle media:
+        self.to_play = list(self.to_play)
+        random.shuffle(self.to_play)
+
+        # spawn thread:
+        app.player.playlist_mode = True
+        app.after(0, app.spawn_daemon, self.playlist_worker, "playlist")
+
+    def unique_key(self) -> int:
+        return 14
+
+    def playlist_worker(self, app):
+        player = app.player
+        while True:
+            if not player.playlist_mode:
+                break
+            if not (player.playing() or player.playlist_paused):
+                # play next media:
+                if len(self.to_play) == 0:
+                    break
+                media = self.to_play.pop()
+                player(media)
+                time.sleep(
+                    1
+                )  # sleep after playing a song so player's state has time to update; not sure if I can make it shorter
+            else:
+                time.sleep(0.2)
+        player.reset()
+
+    def search_views(self, all_views, buttons, current_view_ix):
+        configs = all_views[current_view_ix].configs
+        for config, button in zip(configs, buttons):
+            if (
+                config[0] == self.open_view_ix
+                and config[1] not in self.tracked_views
+                and not button.locked()
+            ):
+                self.tracked_views.add(config[1])
+                self.search_views(all_views, buttons, config[1])
+            elif config[0] == self.play_media_ix and config[1] not in self.to_play:
+                self.to_play.add(config[1])
+
+    def search_actions(self, actions):
+        num_found = 0
+        for action in actions:
+            if isinstance(action, OpenView):
+                self.open_view_ix = action.enum
+                num_found += 1
+            elif isinstance(action, PlayMedia):
+                self.play_media_ix = action.enum
+                num_found += 1
+            else:
+                continue
+
+            if num_found == 2:
+                break
+        return num_found == 2
