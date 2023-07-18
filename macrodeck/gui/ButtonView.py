@@ -1,7 +1,8 @@
 import customtkinter as ctk
-from macrodeck.gui.style import WRAPLEN
-from macrodeck.Actions import ACTIONS, HAS_OBSWS
+
 import macrodeck.ActionClasses as act
+from macrodeck.Actions import ACTIONS, HAS_OBSWS
+from macrodeck.gui.style import WRAPLEN
 
 # get index of "Open View" Action within ACTIONS
 OPENVIEW_IX = None
@@ -71,6 +72,10 @@ class View:
                 button.set_keys(
                     config[2][0], config[2][1]
                 )  # only do this when loading from save
+
+            # run these again cause load might've overwriten hook data
+            button.set_action(config[0])
+            button.set_arg(config[1])
 
     def refresh_globals(self, buttons, configs_main):
         # used when the arg of a global "Open View" command is implicitly changed

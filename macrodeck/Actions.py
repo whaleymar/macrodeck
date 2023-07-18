@@ -12,9 +12,9 @@ ACTIONS = [
     act.OpenView(),
     act.Macro(),
     act.Web(),
-    act.OBSScene()
-    # ,act.OBSMute()
-    ,
+    act.OBSScene(),
+    act.OBSMute(),
+    act.OBSToggleSceneSource(),
     act.ManageWindow(),
     act.EnterText(),
 ]

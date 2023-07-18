@@ -1,8 +1,9 @@
 import customtkinter as ctk
-from macrodeck.gui.style import FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, WRAPLEN, ICON_SIZE
-from macrodeck.gui.util import hovercolor, ctkimage
-from macrodeck.Actions import ACTIONS, HAS_OBSWS
+
 import macrodeck.ActionClasses as act
+from macrodeck.Actions import ACTIONS, HAS_OBSWS
+from macrodeck.gui.style import FC_DEFAULT, FC_DEFAULT2, FC_EMPTY, ICON_SIZE, WRAPLEN
+from macrodeck.gui.util import ctkimage, hovercolor
 
 BACK_ICON = ctkimage("assets/action_back.png", size=ICON_SIZE)
 
@@ -71,6 +72,10 @@ class ActionButton(ctk.CTkButton):
             return
         self.action_enum = enum
 
+        if not ACTIONS[self.action_enum].requires_arg:
+            to_update = ACTIONS[self.action_enum].init_hook(self.master.master)
+            self.update_state(to_update)
+
     def get_action(self):
         return self.action_enum
 
@@ -79,6 +84,12 @@ class ActionButton(ctk.CTkButton):
         if self.locked():
             return
         self.arg = arg
+
+        if ACTIONS[self.action_enum].requires_arg:
+            to_update = ACTIONS[self.action_enum].init_hook(
+                self.arg, self.master.master
+            )
+            self.update_state(to_update)
 
     def get_arg(self):
         return self.arg
@@ -160,8 +171,21 @@ class ActionButton(ctk.CTkButton):
     def get_image(self):
         return self.img_ix
 
+    def update_state(self, to_update):
+        if to_update is None:
+            return
+
+        for key, args in to_update.items():
+            if key == "colors":
+                self.set_colors(*args)
+            else:
+                print(f"Unhandled key: {key}")
+
     def run_action(self):
         # check that we have an action and, if needed, an arg
+
+        to_update = None
+
         if self.action_enum is None or (
             ACTIONS[self.action_enum].requires_arg and self.arg is None
         ):
@@ -169,11 +193,13 @@ class ActionButton(ctk.CTkButton):
             return
 
         if ACTIONS[self.action_enum].requires_arg:
-            ACTIONS[self.action_enum](
+            to_update = ACTIONS[self.action_enum](
                 self.arg, self.master.master
-            )  # self.master.master is fragile if I add more frames. Should use direct pointer to main window TODO
+            )  # self.master.master is fragile if I add more frames. Should use direct pointer to main window TODO (am using in multiple places in class)
         else:
-            ACTIONS[self.action_enum](self.master.master)
+            to_update = ACTIONS[self.action_enum](self.master.master)
+
+        self.update_state(to_update)
 
     def dump(self):
         """

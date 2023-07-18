@@ -1,26 +1,30 @@
-import macrodeck.Keyboard as Keyboard
-import macrodeck.KeyCategories as KeyCategories
-from macrodeck.gui.style import (
-    FC_DEFAULT,
-    FC_DEFAULT2,
-    FC_EMPTY,
-    BC_DEFAULT,
-    XPAD,
-    YPAD,
-    ICON_SIZE,
-    ICON_SIZE_WIDE,
-)
-from macrodeck.gui.util import hovercolor, ctkimage
+import os
+import random
+import time
 import tkinter as tk
-import customtkinter as ctk
-from functools import partial
 import webbrowser
+from functools import partial
+
+import customtkinter as ctk
 import win32gui
 import win32process
 import wmi
-import os
-import time
-import random
+
+import macrodeck.Keyboard as Keyboard
+import macrodeck.KeyCategories as KeyCategories
+from macrodeck.gui.style import (
+    BC_DEFAULT,
+    FC_DEFAULT,
+    FC_DEFAULT2,
+    FC_EMPTY,
+    ICON_SIZE,
+    ICON_SIZE_WIDE,
+    TOGGLE_OFF,
+    TOGGLE_ON,
+    XPAD,
+    YPAD,
+)
+from macrodeck.gui.util import ctkimage, hovercolor
 
 try:
     from obswebsocket import requests
@@ -115,6 +119,12 @@ class Action:  # lawsuit?
             button.set_text(self.default_text, default=True)
 
         button.set_arg(self.default_arg)
+
+    def init_hook(self, arg=None, app=None):
+        """
+        runs when button action & arg are set
+        """
+        pass
 
     # action call
     def __call__(self):
@@ -277,7 +287,7 @@ class Macro(Action):
         sets flex button to "macro config" button
         """
 
-        if not changed:
+        if not changed and app.current_button.get_arg() is not None:
             arg = app.current_button.get_arg()
             modifier, key = arg
             modifier = modifier.replace("MENU", "ALT").replace("LWIN", "WIN")
@@ -476,22 +486,32 @@ class OBSScene(Action):
 
 class OBSMute(Action):
     def __init__(self):
-        raise NotImplementedError
-        super().__init__("Mute OBS Source", None, None, requires_arg=True)
+        super().__init__(
+            "Toggle OBS Audio",
+            None,
+            # ctkimage("assets/action_obsMute.png", ICON_SIZE),
+            None,
+            requires_arg=True,
+        )
 
     def _widget(self, app, frame, changed):
         """
         sets flex button to drop down widget containing all OBS sources
         """
 
-        if app.obsws is None:
+        try:
+            app.obsws.call(requests.GetInputList())
+        except:
             app.helper.configure(text="Could not connect to OBS web server")
             return None, None
 
-        sourcelisttemp = app.obsws.call(requests.GetSourcesList())
+        # seems audio streams are "wasapi_/inputoutput_capture" and video stream is "dshow_input"
+        # images: "image_source", monitor: "monitor_capture", video: "ffmpeg_source"
         sources = [
-            source["sourceName"]
-            for source in app.obsws.call(requests.GetSourcesList()).getSources()
+            source["inputName"]
+            for source in app.obsws.call(requests.GetInputList()).getInputs()
+            if source["inputKind"] == "wasapi_input_capture"
+            or source["inputKind"] == "wasapi_output_capture"
         ]
 
         button = ctk.CTkOptionMenu(
@@ -511,13 +531,34 @@ class OBSMute(Action):
 
         return button, None
 
+    def init_hook(self, arg, app):
+        if (
+            arg is None
+            or app.obsws.call(requests.GetInputMute(inputName=arg)).datain["inputMuted"]
+        ):
+            basecol = TOGGLE_OFF
+        else:
+            basecol = TOGGLE_ON
+
+        return {"colors": (basecol, None, hovercolor(basecol))}
+
     def __call__(self, arg, app):
-        if app.obsws is None:
+        try:
+            app.obsws.call(requests.GetInputList())
+        except:
             app.helper.configure(text="Could not connect to OBS web server")
             return
 
-        app.obsws.call(requests.GetMute(arg))
-        app.obsws.call(requests.SetMute(arg))
+        muted = app.obsws.call(requests.ToggleInputMute(inputName=arg)).datain[
+            "inputMuted"
+        ]
+
+        if not muted:
+            basecol = TOGGLE_ON
+        else:
+            basecol = TOGGLE_OFF
+
+        return {"colors": (basecol, None, hovercolor(basecol))}
 
     def unique_key(self) -> int:
         return 8
@@ -526,7 +567,11 @@ class OBSMute(Action):
 class ManageWindow(Action):
     def __init__(self):
         super().__init__(
-            "Move/Open Application", None, None, requires_arg=True, calls_after=True
+            "Move/Open Application",
+            None,
+            ctkimage("assets/action_window.png", ICON_SIZE),
+            requires_arg=True,
+            calls_after=True,
         )
         self.connection = wmi.WMI()
         self.nameCache = {}
@@ -594,7 +639,7 @@ class ManageWindow(Action):
 
         hwnd = self.appToWindow(appname, isPath)
         if hwnd is None:
-            shouldReturn = True
+            exitEarly = True
             # attempt to open the application
             if isPath:
                 os.startfile(
@@ -605,9 +650,9 @@ class ManageWindow(Action):
                 # re-calc hwnd
                 hwnd = self.appToWindow(appname, isPath)
                 if hwnd is not None:
-                    shouldReturn = False
+                    exitEarly = False
 
-            if shouldReturn:
+            if exitEarly:
                 print(
                     f"Could not find window: {os.path.basename(appname) if isPath else appname}"
                 )
@@ -791,6 +836,8 @@ class ShuffleMedia(Action):
             # skip song
             app.player.stop()
             return
+        else:
+            app.player.reset()
 
         # search media:
         self.tracked_views = set()
@@ -854,3 +901,212 @@ class ShuffleMedia(Action):
             if num_found == 2:
                 break
         return num_found == 2
+
+
+class OBSToggleSceneSource(Action):
+    def __init__(self):
+        super().__init__(
+            "Toggle OBS Source",
+            None,
+            # ctkimage("assets/action_obsMute.png", ICON_SIZE),
+            None,
+            requires_arg=True,
+        )
+
+        self.all = "All"
+
+    def _widget(self, app, frame, changed):
+        """
+        sets flex button to drop down widget containing all OBS sources
+        """
+
+        try:
+            app.obsws.call(requests.GetSceneItemList())
+        except:
+            app.helper.configure(text="Could not connect to OBS web server")
+            return None, None
+
+        scenes = [self.all] + self.get_scenes(app)
+
+        if changed:
+            scene = scenes[0]
+        else:
+            scene = app.current_button.arg[0]
+
+        sources = self.get_sources(app, scene)
+
+        scene_menu = ctk.CTkOptionMenu(
+            frame,
+            values=scenes,
+            fg_color=FC_DEFAULT,
+            button_hover_color=hovercolor(FC_DEFAULT),
+            font=app.STANDARDFONT,
+            command=partial(self.source_config, app, True),
+        )
+
+        source_menu = ctk.CTkOptionMenu(
+            frame,
+            values=sources,
+            fg_color=FC_DEFAULT2,
+            button_hover_color=hovercolor(FC_DEFAULT2),
+            font=app.STANDARDFONT,
+            command=partial(self.source_config, app, False),
+        )
+
+        if not changed:
+            scene_menu.set(app.current_button.arg[0])
+            source_menu.set(app.current_button.arg[1])
+        else:
+            # set button default text
+            app.current_button.set_arg((scene_menu.get(), source_menu.get()))
+
+        return scene_menu, source_menu
+
+    def init_hook(self, arg, app):
+        if arg is None or not self.get_source_status(app, arg=arg):
+            basecol = TOGGLE_OFF
+        else:
+            basecol = TOGGLE_ON
+
+        return {"colors": (basecol, None, hovercolor(basecol))}
+
+    def __call__(self, arg, app):
+        try:
+            app.obsws.call(requests.GetInputList())
+        except:
+            app.helper.configure(text="Could not connect to OBS web server")
+            return
+
+        enabled = self.toggle_source_status(app, arg=arg)
+
+        if enabled:
+            basecol = TOGGLE_ON
+        else:
+            basecol = TOGGLE_OFF
+
+        return {"colors": (basecol, None, hovercolor(basecol))}
+
+    def unique_key(self) -> int:
+        return 15
+
+    def source_config(self, app, is_scene, name):
+        """
+        updates scene selection or source selection based on value of is_scene
+        """
+
+        current_arg = app.current_button.arg
+        if is_scene:
+            # reconfigure source drop_down:
+            sources = self.get_sources(app, name)
+            app.flex_button2.set(sources[0])
+            app.flex_button2.configure(values=sources)
+
+            app.current_button.set_arg((name, sources[0]))
+
+        else:
+            app.current_button.set_arg((current_arg[0], name))
+
+    def get_scenes(self, app):
+        return [
+            scene["sceneName"]
+            for scene in app.obsws.call(requests.GetSceneList()).getScenes()
+        ]
+
+    def get_sources(self, app, scene_name):
+        if scene_name == self.all:
+            scenes = [
+                scene["sceneName"]
+                for scene in app.obsws.call(requests.GetSceneList()).getScenes()
+            ]
+        else:
+            scenes = [scene_name]
+
+        return sorted(
+            list(
+                set(
+                    [
+                        source["sourceName"]
+                        for scene in scenes
+                        for source in app.obsws.call(
+                            requests.GetSceneItemList(sceneName=scene)
+                        ).getSceneItems()
+                    ]
+                )
+            )
+        )
+
+    def get_source_id(self, app, scene_name, source_name):
+        return app.obsws.call(
+            requests.GetSceneItemId(sceneName=scene_name, sourceName=source_name)
+        ).datain["sceneItemId"]
+
+    def get_source_status(self, app, arg=None):
+        if arg is None:
+            scene_name, source_name = (
+                app.current_button.arg[0],
+                app.current_button.arg[1],
+            )
+        else:
+            scene_name, source_name = arg
+
+        if scene_name == self.all:
+            enabled = True
+            for scene_name in self.get_scenes(app):
+                try:
+                    source_id = self.get_source_id(app, scene_name, source_name)
+                except KeyError:
+                    continue
+                enabled &= app.obsws.call(
+                    requests.GetSceneItemEnabled(
+                        sceneName=scene_name, sceneItemId=source_id
+                    )
+                ).datain["sceneItemEnabled"]
+
+                if not enabled:
+                    break
+
+            return enabled
+        else:
+            source_id = self.get_source_id(app, scene_name, source_name)
+            return app.obsws.call(
+                requests.GetSceneItemEnabled(
+                    sceneName=scene_name, sceneItemId=source_id
+                )
+            ).datain["sceneItemEnabled"]
+
+    def toggle_source_status(self, app, arg=None):
+        if arg is None:
+            scene_name, source_name = (
+                app.current_button.arg[0],
+                app.current_button.arg[1],
+            )
+        else:
+            scene_name, source_name = arg
+
+        should_enable = self.get_source_status(app, arg=arg) ^ True
+
+        if scene_name == self.all:
+            for scene_name in self.get_scenes(app):
+                try:
+                    source_id = self.get_source_id(app, scene_name, source_name)
+                except KeyError:
+                    continue
+
+                app.obsws.call(
+                    requests.SetSceneItemEnabled(
+                        sceneName=scene_name,
+                        sceneItemId=source_id,
+                        sceneItemEnabled=should_enable,
+                    )
+                )
+        else:
+            source_id = self.get_source_id(app, scene_name, source_name)
+            app.obsws.call(
+                requests.SetSceneItemEnabled(
+                    sceneName=scene_name,
+                    sceneItemId=source_id,
+                    sceneItemEnabled=should_enable,
+                )
+            )
+
+        return should_enable

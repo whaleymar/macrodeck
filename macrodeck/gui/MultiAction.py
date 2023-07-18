@@ -1,18 +1,20 @@
+import time
+from functools import partial
+
+import customtkinter as ctk
+
 from macrodeck import ActionClasses
 from macrodeck.gui.ActionButton import ActionButton
 from macrodeck.gui.style import (
-    FC_DEFAULT,
-    FC_EMPTY,
-    FC_DEFAULT2,
-    BC_DEFAULT,
     BC_ACTIVE,
+    BC_DEFAULT,
+    FC_DEFAULT,
+    FC_DEFAULT2,
+    FC_EMPTY,
     ICON_SIZE,
     ICON_SIZE_WIDE,
 )
-from macrodeck.gui.util import hovercolor, ctkimage
-import customtkinter as ctk
-from functools import partial
-import time
+from macrodeck.gui.util import ctkimage, hovercolor
 
 XPAD = 3
 YPAD = 3

@@ -1,10 +1,11 @@
+import math
+import sys
 import tkinter
+from functools import partial
+
 import customtkinter as ctk
 from PIL import Image, ImageTk
-import sys
-import os
-import math
-from functools import partial
+
 from macrodeck.gui.util import hovercolor
 
 if sys.platform.startswith("win"):

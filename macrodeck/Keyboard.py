@@ -1,11 +1,12 @@
-from pynput.keyboard import (
-    HotKey,
+import time
+
+from pynput._util import win32_vks  # gets keycodes
+from pynput.keyboard import (  # threading/thread wrapper for hotkeys
     Controller,
+    HotKey,
     KeyCode,
     Listener,
-)  # threading/thread wrapper for hotkeys
-from pynput._util import win32_vks  # gets keycodes
-import time
+)
 
 
 # Create custom pynput class to avoid a bug with virtual key codes: ########

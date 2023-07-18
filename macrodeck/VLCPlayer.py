@@ -17,17 +17,19 @@ class VLCPlayer:
         self.nplayers = 0
         self.playlist_mode = False
         self.playlist_paused = False
+        self.volume = 50
 
     def __call__(self, path, new=False):
         if new or not self.nplayers:
             player = self.new_player()
+            player.audio_set_volume(self.volume)
             self.players.append(player)
             self.nplayers += 1
         else:
             player = self.players[0]
 
         player.set_media(self.vlc_instance.media_new(path))
-        print(f"Playing {os.path.basename(path)}")
+        print(f"Playing {os.path.basename(path)}".encode("utf8"))
         player.play()
 
     def new_player(self):
@@ -78,6 +80,7 @@ class VLCPlayer:
 
     def set_volume(self, value):
         # works only for default player
+        self.volume = value
 
         if not self.nplayers:
             return

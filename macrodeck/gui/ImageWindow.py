@@ -1,8 +1,10 @@
 import tkinter as tk
-import customtkinter as ctk
-from macrodeck.gui.util import hovercolor, ctkimage
-from macrodeck.gui.style import FC_EMPTY, BC_DEFAULT, ICON_SIZE
 from functools import partial
+
+import customtkinter as ctk
+
+from macrodeck.gui.style import BC_DEFAULT, FC_EMPTY, ICON_SIZE
+from macrodeck.gui.util import ctkimage, hovercolor
 
 HC_EMPTY = hovercolor(FC_EMPTY)
 

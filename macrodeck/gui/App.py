@@ -1,33 +1,35 @@
-import tkinter as tk
-import customtkinter as ctk
-from macrodeck.gui.util import hovercolor, to_rgb, ctkimage, genericSwap, scaling_factor
+import json
 import os
+import threading
+import tkinter as tk
+from functools import partial
+
+import customtkinter as ctk
+
 import macrodeck.Keyboard as Keyboard
 from macrodeck import Actions
-from macrodeck.gui.ActionButton import ActionButton, HAS_OBSWS
+from macrodeck.gui.ActionButton import HAS_OBSWS, ActionButton
 from macrodeck.gui.ButtonView import View, ViewButton
 from macrodeck.gui.ColorPicker import (
     AskColor,
 )  # from https://github.com/Akascape/CTkColorPicker
 from macrodeck.gui.HotkeyWindow import HotkeyWindow
 from macrodeck.gui.ImageWindow import ImageWindow
-from macrodeck.gui.MultiAction import MultiAction, WRAPLEN_MA
+from macrodeck.gui.MultiAction import WRAPLEN_MA, MultiAction
 from macrodeck.gui.style import (
     BC_ACTIVE,
     BC_DEFAULT,
     FC_DEFAULT,
     FC_DEFAULT2,
     FC_EMPTY,
-    WRAPLEN,
     ICON_SIZE,
     ICON_SIZE_WIDE,
+    WRAPLEN,
     XPAD,
     YPAD,
 )
-from functools import partial
-import json
-from macrodeck.VLCPlayer import VLCPlayer, HAS_VLC
-import threading
+from macrodeck.gui.util import ctkimage, genericSwap, hovercolor, scaling_factor, to_rgb
+from macrodeck.VLCPlayer import HAS_VLC, VLCPlayer
 
 try:
     from obswebsocket import obsws
