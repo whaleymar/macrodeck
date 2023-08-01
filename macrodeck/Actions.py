@@ -15,6 +15,7 @@ ACTIONS = [
     act.OBSScene(),
     act.OBSMute(),
     act.OBSToggleSceneSource(),
+    act.OBSCounterText(),
     act.ManageWindow(),
     act.EnterText(),
 ]

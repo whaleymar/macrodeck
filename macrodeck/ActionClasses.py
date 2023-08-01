@@ -24,7 +24,7 @@ from macrodeck.gui.style import (
     XPAD,
     YPAD,
 )
-from macrodeck.gui.util import ctkimage, hovercolor
+from macrodeck.gui.util import OBSString, ctkimage, hovercolor
 
 try:
     from obswebsocket import requests
@@ -532,13 +532,18 @@ class OBSMute(Action):
         return button, None
 
     def init_hook(self, arg, app):
-        if (
-            arg is None
-            or app.obsws.call(requests.GetInputMute(inputName=arg)).datain["inputMuted"]
-        ):
+        try:
+            if (
+                arg is None
+                or app.obsws.call(requests.GetInputMute(inputName=arg)).datain[
+                    "inputMuted"
+                ]
+            ):
+                basecol = TOGGLE_OFF
+            else:
+                basecol = TOGGLE_ON
+        except:
             basecol = TOGGLE_OFF
-        else:
-            basecol = TOGGLE_ON
 
         return {"colors": (basecol, None, hovercolor(basecol))}
 
@@ -963,10 +968,13 @@ class OBSToggleSceneSource(Action):
         return scene_menu, source_menu
 
     def init_hook(self, arg, app):
-        if arg is None or not self.get_source_status(app, arg=arg):
+        try:
+            if arg is None or not self.get_source_status(app, arg=arg):
+                basecol = TOGGLE_OFF
+            else:
+                basecol = TOGGLE_ON
+        except:
             basecol = TOGGLE_OFF
-        else:
-            basecol = TOGGLE_ON
 
         return {"colors": (basecol, None, hovercolor(basecol))}
 
@@ -1110,3 +1118,94 @@ class OBSToggleSceneSource(Action):
             )
 
         return should_enable
+
+
+class OBSCounterText(Action):
+    def __init__(self):
+        super().__init__(
+            "OBS Counter",
+            None,
+            # ctkimage("assets/action_obsMute.png", ICON_SIZE),
+            None,
+            requires_arg=True,
+        )
+
+        self.filename = None
+        self.string_format = None
+        self.filepath = "obstextfiles"
+
+    def _widget(self, app, frame, changed):
+        """
+        sets flex buttons to text entries
+        """
+
+        if self.filename is None or self.string_format is None:
+            self.filename = tk.StringVar(frame, value="")
+            self.filename.trace("w", partial(self.set_button_arg, app, 0))
+            self.string_format = tk.StringVar(frame, value="")
+            self.string_format.trace("w", partial(self.set_button_arg, app, 1))
+
+        if changed:
+            app.current_button.set_arg(("", ""))
+        self.filename.set(app.current_button.get_arg()[0])
+        self.string_format.set(app.current_button.get_arg()[1])
+
+        filename_entry = ctk.CTkEntry(
+            frame,
+            textvariable=self.filename,
+            font=app.STANDARDFONT,
+            placeholder_text="filename (no extension)",
+        )
+
+        obs_string_entry = ctk.CTkEntry(
+            frame, textvariable=self.string_format, font=app.STANDARDFONT
+        )
+
+        return filename_entry, obs_string_entry
+
+    def __call__(self, arg, app):
+        try:
+            obs_string = self.init_obs_string(arg[1])
+        except ValueError:
+            app.helper.configure(text="Error: Check string formatting")
+            return
+
+        for i in range(len(obs_string.elements)):
+            obs_string.elements[i] += 1
+
+        full_path = os.path.join(self.filepath, self.filename.get()) + ".txt"
+
+        if not os.path.exists(self.filepath):
+            os.mkdir(self.filepath)
+
+        try:
+            with open(full_path, "w") as f:
+                f.write(obs_string.format_string())
+        except FileNotFoundError:
+            app.helper.configure(text="Error: directory not found")
+            return
+        except:
+            app.helper.configure(text="Error: Issue writing to file")
+            return
+
+        return {
+            "args": (
+                arg[0],
+                obs_string.update_string(),
+            )
+        }
+
+    def init_obs_string(self, string_format):
+        return OBSString(string_format, element_constructor=int)
+
+    def set_button_arg(self, app, arg_ix, *args):
+        src_string = self.filename.get() if not arg_ix else self.string_format.get()
+
+        if not arg_ix:
+            src_string = src_string.split(".")[0]
+            app.current_button.set_arg((src_string, app.current_button.get_arg()[1]))
+        else:
+            app.current_button.set_arg((app.current_button.get_arg()[0], src_string))
+
+    def unique_key(self) -> int:
+        return 16

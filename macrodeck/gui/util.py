@@ -38,3 +38,52 @@ def scaling_factor():
     if m is None:
         raise ValueError
     return m.height / 1440
+
+
+class OBSString:
+    def __init__(self, string, element_constructor=str):
+        self.constructor = element_constructor
+        self.set_string(string)
+
+    def set_string(self, string):
+        self.string = string
+        self.compile()
+
+    def compile(self):
+        i = 0
+        j = i + 1
+        self.starter_elements = []
+
+        while i < len(self.string):
+            i = self.string.find("{", i)
+            if i == -1:
+                break
+            j = self.string.find("}", i)
+            if j == -1:
+                raise ValueError("Malformed String")
+
+            elem = self.string[i : j + 1]
+            self.starter_elements.append(elem)
+            i = j + 1
+
+        self.elements = []
+        for i in range(len(self.starter_elements)):
+            elem = self.starter_elements[i]
+            self.string = self.string.replace(elem, "{}")
+            self.elements.append(self.constructor(elem[1:-1]))
+
+    def format_string(self):
+        if len(self.elements) == 0:
+            return self.string
+
+        return self.string.format(*self.elements)
+
+    def update_string(self):
+        """
+        updates internal fstring representation and returns button arg with updated elems
+        """
+        if len(self.elements) == 0:
+            return self.string
+        new_fstring = self.string.format(*[f"{{{elem}}}" for elem in self.elements])
+        self.set_string(new_fstring)
+        return new_fstring

@@ -137,8 +137,10 @@ class ActionButton(ctk.CTkButton):
     def get_text(self):
         return self.cget("text"), self.default_text
 
-    def set_colors(self, fg_color=None, border_color=None, hover_color=None):
-        if self.locked():
+    def set_colors(
+        self, fg_color=None, border_color=None, hover_color=None, ignore_lock=False
+    ):
+        if self.locked() and not ignore_lock:
             return
 
         if fg_color is not None:
@@ -177,7 +179,9 @@ class ActionButton(ctk.CTkButton):
 
         for key, args in to_update.items():
             if key == "colors":
-                self.set_colors(*args)
+                self.set_colors(*args, ignore_lock=True)
+            elif key == "args":
+                self.set_arg(args)
             else:
                 print(f"Unhandled key: {key}")
 
