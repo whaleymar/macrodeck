@@ -50,6 +50,7 @@ class Action:  # lawsuit?
         requires_arg=False,
         inactive=False,
         calls_after=False,
+        MA_wait_secs=0.0,
     ):
         self.name = name
         self.default_arg = default_arg
@@ -59,6 +60,7 @@ class Action:  # lawsuit?
         self._inactive = inactive  # if true, this action does nothing and will make the button grayed-out
         self.enum = None
         self.calls_after = calls_after
+        self.MA_wait_secs = MA_wait_secs
 
     def display_widget(self, app, changed):
         # app.destroy_flex()
@@ -127,7 +129,7 @@ class Action:  # lawsuit?
         pass
 
     # action call
-    def __call__(self):
+    def __call__(self, multi_action=False):
         pass
 
     # subclass must overwrite this
@@ -144,7 +146,7 @@ class NoAction(Action):
     def __init__(self):
         super().__init__("No Action", None, None, inactive=True)
 
-    def __call__(self, app):
+    def __call__(self, app, multi_action=False):
         pass
 
     def unique_key(self) -> int:
@@ -178,7 +180,7 @@ class PlayMedia(Action):
 
         return button, None
 
-    def __call__(self, path, app):
+    def __call__(self, path, app, multi_action=False):
         app.player.reset()
         app.player(path)
 
@@ -195,7 +197,7 @@ class PauseMedia(Action):
             default_text="Pause Media",
         )
 
-    def __call__(self, app):
+    def __call__(self, app, multi_action=False):
         app.player.toggle_pause()
 
     def unique_key(self) -> int:
@@ -211,7 +213,7 @@ class StopMedia(Action):
             default_text="Stop Media",
         )
 
-    def __call__(self, app):
+    def __call__(self, app, multi_action=False):
         app.player.reset()
 
     def unique_key(self) -> int:
@@ -279,6 +281,7 @@ class Macro(Action):
             ctkimage("assets/action_macro.png", ICON_SIZE),
             requires_arg=True,
             calls_after=True,
+            MA_wait_secs=0.1,
         )
         self.keyboard = _keyboard
 
@@ -351,7 +354,7 @@ class Macro(Action):
             self.run_macro()
         else:
             # tells mainloop to run App.run_macro, then kills hotkeys
-            app.after(100, self.run_macro)
+            app.after(10, self.run_macro)
             app.kill_hotkeys()
             app.after_idle(app.init_hotkeys)
 
@@ -425,7 +428,7 @@ class Web(Action):
 
         return entry, None
 
-    def __call__(self, url, app):
+    def __call__(self, url, app, multi_action=False):
         webbrowser.open(url)
 
     def unique_key(self) -> int:
@@ -470,7 +473,7 @@ class OBSScene(Action):
 
         return button, None
 
-    def __call__(self, arg, app):
+    def __call__(self, arg, app, multi_action=False):
         # if app.obsws is None: # not working when auto-reconnect is enabled
         try:
             app.obsws.call(requests.GetSceneList())
@@ -547,7 +550,7 @@ class OBSMute(Action):
 
         return {"colors": (basecol, None, hovercolor(basecol))}
 
-    def __call__(self, arg, app):
+    def __call__(self, arg, app, multi_action=False):
         try:
             app.obsws.call(requests.GetInputList())
         except:
@@ -781,7 +784,7 @@ class EnterText(Action):
 
         return entry, None
 
-    def __call__(self, text, app):
+    def __call__(self, text, app, multi_action=False):
         self.keyboard.type(text)
 
     def unique_key(self) -> int:
@@ -806,7 +809,7 @@ class MediaVolume(Action):
 
         return slider, None
 
-    def __call__(self, volume, app):
+    def __call__(self, volume, app, multi_action=False):
         app.player.set_volume(volume)
 
     def unique_key(self) -> int:
@@ -829,7 +832,7 @@ class ShuffleMedia(Action):
         self.open_view_ix = None
         self.play_media_ix = None
 
-    def __call__(self, app):
+    def __call__(self, app, multi_action=False):
         if (
             self.open_view_ix is None or self.play_media_ix is None
         ) and not self.search_actions(app.get_actions()):
@@ -876,7 +879,10 @@ class ShuffleMedia(Action):
                 )  # sleep after playing a song so player's state has time to update; not sure if I can make it shorter
             else:
                 time.sleep(0.2)
-        player.reset()
+
+        # no reset if was manually cancelled
+        if player.playlist_mode:
+            player.reset()
 
     def search_views(self, all_views, buttons, current_view_ix):
         configs = all_views[current_view_ix].configs
@@ -918,7 +924,7 @@ class OBSToggleSceneSource(Action):
             requires_arg=True,
         )
 
-        self.all = "All"
+        self.sub_actions = ["Toggle", "On", "Off"]
 
     def _widget(self, app, frame, changed):
         """
@@ -931,23 +937,7 @@ class OBSToggleSceneSource(Action):
             app.helper.configure(text="Could not connect to OBS web server")
             return None, None
 
-        scenes = [self.all] + self.get_scenes(app)
-
-        if changed:
-            scene = scenes[0]
-        else:
-            scene = app.current_button.arg[0]
-
-        sources = self.get_sources(app, scene)
-
-        scene_menu = ctk.CTkOptionMenu(
-            frame,
-            values=scenes,
-            fg_color=FC_DEFAULT,
-            button_hover_color=hovercolor(FC_DEFAULT),
-            font=app.STANDARDFONT,
-            command=partial(self.source_config, app, True),
-        )
+        sources = self.get_sources(app)
 
         source_menu = ctk.CTkOptionMenu(
             frame,
@@ -955,17 +945,26 @@ class OBSToggleSceneSource(Action):
             fg_color=FC_DEFAULT2,
             button_hover_color=hovercolor(FC_DEFAULT2),
             font=app.STANDARDFONT,
-            command=partial(self.source_config, app, False),
+            command=partial(self.source_config, app, 0),
+        )
+
+        sub_action_menu = ctk.CTkOptionMenu(
+            frame,
+            values=self.sub_actions,
+            fg_color=FC_DEFAULT,
+            button_hover_color=hovercolor(FC_DEFAULT),
+            font=app.STANDARDFONT,
+            command=partial(self.source_config, app, 1),
         )
 
         if not changed:
-            scene_menu.set(app.current_button.arg[0])
-            source_menu.set(app.current_button.arg[1])
+            source_menu.set(app.current_button.arg[0])
+            sub_action_menu.set(app.current_button.arg[1])
         else:
             # set button default text
-            app.current_button.set_arg((scene_menu.get(), source_menu.get()))
+            app.current_button.set_arg((source_menu.get(), sub_action_menu.get()))
 
-        return scene_menu, source_menu
+        return source_menu, sub_action_menu
 
     def init_hook(self, arg, app):
         try:
@@ -978,7 +977,7 @@ class OBSToggleSceneSource(Action):
 
         return {"colors": (basecol, None, hovercolor(basecol))}
 
-    def __call__(self, arg, app):
+    def __call__(self, arg, app, multi_action=False):
         try:
             app.obsws.call(requests.GetInputList())
         except:
@@ -997,22 +996,17 @@ class OBSToggleSceneSource(Action):
     def unique_key(self) -> int:
         return 15
 
-    def source_config(self, app, is_scene, name):
+    def source_config(self, app, widget_ix, string):
         """
-        updates scene selection or source selection based on value of is_scene
+        updates button args based on drop-down selection
         """
 
         current_arg = app.current_button.arg
-        if is_scene:
-            # reconfigure source drop_down:
-            sources = self.get_sources(app, name)
-            app.flex_button2.set(sources[0])
-            app.flex_button2.configure(values=sources)
-
-            app.current_button.set_arg((name, sources[0]))
+        if widget_ix == 1:
+            app.current_button.set_arg((current_arg[0], string))
 
         else:
-            app.current_button.set_arg((current_arg[0], name))
+            app.current_button.set_arg((string, current_arg[1]))
 
     def get_scenes(self, app):
         return [
@@ -1020,14 +1014,11 @@ class OBSToggleSceneSource(Action):
             for scene in app.obsws.call(requests.GetSceneList()).getScenes()
         ]
 
-    def get_sources(self, app, scene_name):
-        if scene_name == self.all:
-            scenes = [
-                scene["sceneName"]
-                for scene in app.obsws.call(requests.GetSceneList()).getScenes()
-            ]
-        else:
-            scenes = [scene_name]
+    def get_sources(self, app):
+        scenes = [
+            scene["sceneName"]
+            for scene in app.obsws.call(requests.GetSceneList()).getScenes()
+        ]
 
         return sorted(
             list(
@@ -1050,65 +1041,50 @@ class OBSToggleSceneSource(Action):
 
     def get_source_status(self, app, arg=None):
         if arg is None:
-            scene_name, source_name = (
+            source_name, sub_action = (
                 app.current_button.arg[0],
                 app.current_button.arg[1],
             )
         else:
-            scene_name, source_name = arg
+            source_name, sub_action = arg
 
-        if scene_name == self.all:
-            enabled = True
-            for scene_name in self.get_scenes(app):
-                try:
-                    source_id = self.get_source_id(app, scene_name, source_name)
-                except KeyError:
-                    continue
-                enabled &= app.obsws.call(
-                    requests.GetSceneItemEnabled(
-                        sceneName=scene_name, sceneItemId=source_id
-                    )
-                ).datain["sceneItemEnabled"]
-
-                if not enabled:
-                    break
-
-            return enabled
-        else:
-            source_id = self.get_source_id(app, scene_name, source_name)
-            return app.obsws.call(
+        enabled = True
+        for scene_name in self.get_scenes(app):
+            try:
+                source_id = self.get_source_id(app, scene_name, source_name)
+            except KeyError:
+                continue
+            enabled &= app.obsws.call(
                 requests.GetSceneItemEnabled(
                     sceneName=scene_name, sceneItemId=source_id
                 )
             ).datain["sceneItemEnabled"]
 
+            if not enabled:
+                break
+
+        return enabled
+
     def toggle_source_status(self, app, arg=None):
         if arg is None:
-            scene_name, source_name = (
+            source_name, sub_action = (
                 app.current_button.arg[0],
                 app.current_button.arg[1],
             )
         else:
-            scene_name, source_name = arg
+            source_name, sub_action = arg
 
-        should_enable = self.get_source_status(app, arg=arg) ^ True
-
-        if scene_name == self.all:
-            for scene_name in self.get_scenes(app):
-                try:
-                    source_id = self.get_source_id(app, scene_name, source_name)
-                except KeyError:
-                    continue
-
-                app.obsws.call(
-                    requests.SetSceneItemEnabled(
-                        sceneName=scene_name,
-                        sceneItemId=source_id,
-                        sceneItemEnabled=should_enable,
-                    )
-                )
+        if sub_action == "Toggle":
+            should_enable = self.get_source_status(app, arg=arg) ^ True
         else:
-            source_id = self.get_source_id(app, scene_name, source_name)
+            should_enable = sub_action == "On"
+
+        for scene_name in self.get_scenes(app):
+            try:
+                source_id = self.get_source_id(app, scene_name, source_name)
+            except KeyError:
+                continue
+
             app.obsws.call(
                 requests.SetSceneItemEnabled(
                     sceneName=scene_name,
@@ -1163,7 +1139,7 @@ class OBSCounterText(Action):
 
         return filename_entry, obs_string_entry
 
-    def __call__(self, arg, app):
+    def __call__(self, arg, app, multi_action=False):
         try:
             obs_string = self.init_obs_string(arg[1])
         except ValueError:

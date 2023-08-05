@@ -128,6 +128,9 @@ MISCKEYS = [
     "DOWN",
     "INSERT",
     "DELETE",
+    ",",
+    ".",
+    ";",
 ]
 
 MOUSEKEYS = ["LBUTTON", "RBUTTON", "MBUTTON"]

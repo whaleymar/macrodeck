@@ -84,7 +84,7 @@ class MultiAction(ActionClasses.Action):
                 else:
                     actions[action_enum](self.app)
 
-            time.sleep(self.secs_between_actions)
+            time.sleep(actions[action_enum].MA_wait_secs)
 
     def button_callback(self, button_ix):
         """
